@@ -35,6 +35,10 @@ jobs:
             --env BACHATA_INSIDE_DEBIAN_CONTAINER=1 \
             debian:trixie bash -lc '
               set -euo pipefail
+              # The checkout belongs to the host runner, not container root.
+              # Allow Git to read the pinned checkout and its nested submodules.
+              git config --global --add safe.directory /workspace/native-source
+              git config --global --add safe.directory "/workspace/native-source/*"
               bash native-source/runtime/scripts/install-debian-runtime-deps.sh
               bash scripts/build-native-runtime.sh /workspace/native-source /workspace/native-output
             '
