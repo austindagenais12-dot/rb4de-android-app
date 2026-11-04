@@ -1,0 +1,51 @@
+name: Build ARM64 emulator runtime (experimental)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned open-source emulator core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init native-source
+          git -C native-source remote add origin https://github.com/zenithblue-oss/shadps4-arm64.git
+          git -C native-source fetch --depth 1 origin be6bc2e9c60799e071dd2fafa6216e8d80ec619c
+          git -C native-source checkout --detach FETCH_HEAD
+          git -C native-source submodule update --init --recursive --depth 1 --jobs 8
+          test "$(git -C native-source rev-parse HEAD)" = be6bc2e9c60799e071dd2fafa6216e8d80ec619c
+
+      - name: Build in isolated Debian Trixie container
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p native-output
+          docker run --rm \
+            --mount "type=bind,source=$PWD,target=/workspace" \
+            --workdir /workspace \
+            --env BACHATA_INSIDE_DEBIAN_CONTAINER=1 \
+            debian:trixie bash -lc '
+              set -euo pipefail
+              bash native-source/runtime/scripts/install-debian-runtime-deps.sh
+              bash scripts/build-native-runtime.sh /workspace/native-source /workspace/native-output
+            '
+
+      - name: Upload Linux ARM64 runtime package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rb4dx-arm64-linux-runtime
+          path: |
+            native-output/runtime.zip
+            native-output/manifest.json
+          if-no-files-found: error
+          compression-level: 0
+
