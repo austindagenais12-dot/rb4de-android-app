@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main]
+    branches: [main, fix/v0129-gpu-diagnostics]
     paths:
       - 'app/**'
       - 'native/vortek/**'
