@@ -22,12 +22,28 @@ if [[ ! -f "$core_dir/runtime/locks/components.lock.json" ]]; then
   exit 1
 fi
 
-echo "Building open-source ARM64 shadPS4 + FEXCore"
+echo "Preparing open-source ARM64 shadPS4 + FEXCore"
 echo "Core commit: $(git -C "$core_dir" rev-parse HEAD)"
 
 # These are upstream-maintained build scripts. They write only to their
 # checkout's runtime/build and runtime/sources locations.
-bash "$core_dir/runtime/scripts/build-shadps4-arm64.sh"
+if [[ "${RB4DX_SKIP_EMULATOR_BUILD:-0}" == "1" ]]; then
+  # CI stores the completed ARM64 stage before running Vulkan packaging.
+  # Fail explicitly if a restored cache is missing or incomplete.
+  for file in \
+    "$core_dir/runtime/build/shadps4-arm64-stage/bin/shadps4-arm64" \
+    "$core_dir/runtime/build/shadps4-arm64-stage/needed.txt" \
+    "$core_dir/runtime/build/fexcore-smoke-stage/bin/fexcore-smoke" \
+    "$core_dir/runtime/build/fexcore-smoke-stage/bin/fexcore-guest-harness"; do
+    if [[ ! -s "$file" ]]; then
+      echo "Missing staged ARM64 emulator component: $file" >&2
+      exit 1
+    fi
+  done
+  echo "Reusing previously built ARM64 emulator stage"
+else
+  bash "$core_dir/runtime/scripts/build-shadps4-arm64.sh"
+fi
 bash "$core_dir/runtime/scripts/vendor-vortek.sh"
 bash "$core_dir/runtime/scripts/build-vortek-client.sh"
 node "$core_dir/runtime/scripts/stage-debian-runtime.mjs"
