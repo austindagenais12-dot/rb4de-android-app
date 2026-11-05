@@ -43,7 +43,10 @@
      (*swapchain->jmethods->env)->CallVoidMethod(swapchain->jmethods->env, swapchain->jmethods->obj,
 -                                                swapchain->jmethods->updateWindowContent, swapchain->windowId);
 +                                                swapchain->jmethods->updateWindowContent, swapchain->windowId, (jint)imageIndex);
- }
+-}
+\ No newline at end of file
++}
+\ No newline at end of file
 --- a/src/vk_context.c
 +++ b/src/vk_context.c
 @@ -13,8 +13,8 @@
@@ -66,7 +69,10 @@
 -extern void XWindowSwapchain_presentImage(XWindowSwapchain* swapchain);
 +extern void XWindowSwapchain_presentImage(XWindowSwapchain* swapchain, uint32_t imageIndex);
  
- #endif
+-#endif
+\ No newline at end of file
++#endif
+\ No newline at end of file
 --- a/src/request_handler.c
 +++ b/src/request_handler.c
 @@ -3,6 +3,6 @@
