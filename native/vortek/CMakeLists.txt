@@ -8,9 +8,10 @@ if(NOT DEFINED WINLATOR_SOURCE OR NOT DEFINED VORTEK_SERVER_SOURCE)
 endif()
 
 set(WINLATOR_NATIVE "${WINLATOR_SOURCE}/app/src/main/cpp")
-# The pinned upstream time_utils.h calls POSIX time functions without
-# including <time.h>; supply it for the imported native translation units.
-add_compile_options(-include time.h)
+# Several pinned upstream utility headers rely on standard C declarations
+# supplied by their original Android build. Include them in this standalone
+# build without changing the upstream source tree.
+add_compile_options(-include time.h -include string.h -include stdlib.h)
 include_directories(
   "${WINLATOR_NATIVE}/winlator/include"
   "${WINLATOR_NATIVE}/libadrenotools/include")
