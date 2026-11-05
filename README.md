@@ -24,6 +24,11 @@ It does not modify or share storage with Bachata S4.
   app's private storage on first launch, verifying every file's SHA-256 against
   the build manifest. This works without Shizuku or root. It does not launch
   the Linux emulator yet.
+* The Android debug APK runs under a separate diagnostic package ID
+  (dev.rb4dx.standalone.probe) so it does not overwrite the previous importer
+  or erase the owner's imported Deluxe assets. It adds a manual FEXCore CPU
+  process smoke test and a Copy Diagnostic Report button. No game data or
+  Deluxe import is needed for this CPU test.
 
 The original RB4DX desktop directions also mention placing the plugin in
 `sce_module`; that is *not* enough on Android, and this app uses the open-source
@@ -51,7 +56,8 @@ the APK is not presented as a working emulator.
 Requires JDK 17, Android SDK platform 35, Android Gradle Plugin 8.9.0 and
 Gradle 8.11.1. GitHub Actions workflow android.yml selects the latest
 successful native runtime, verifies its ZIP and manifest, stages both as
-Android assets, and builds the runtime-stage debug APK automatically.
+Android assets, stages the glibc ARM64 loader as a native library, and builds
+the runtime-stage debug APK automatically.
 On the phone, the app extracts and verifies the runtime on first launch.
 For local Gradle builds, supply both native runtime assets under
 app/src/main/assets/runtime first. Do not commit the large binary to Git.

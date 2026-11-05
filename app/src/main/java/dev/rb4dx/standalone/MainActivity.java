@@ -2,6 +2,8 @@
 package dev.rb4dx.standalone;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -17,6 +19,7 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -43,7 +46,13 @@ public final class MainActivity extends Activity {
     private TextView modStatus;
     private TextView detailStatus;
     private TextView runtimeStatus;
+    private TextView probeStatus;
     private Button importButton;
+    private Button probeButton;
+    private Button copyProbeButton;
+    private Path preparedRuntimeDirectory;
+    private String lastProbeReport;
+    private boolean smokeRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -103,6 +112,17 @@ public final class MainActivity extends Activity {
         addText(body,
                 "The runtime is installed and verified automatically in this test build. No root or Shizuku is needed.",
                 14, MUTED, false);
+        addGap(body, 12);
+        addText(body, "Native execution diagnostic", 18, FG, true);
+        addText(body, "Runs a real FEXCore CPU smoke test. This is not a Rock Band 4 launch.",
+                14, MUTED, false);
+        probeStatus = addText(body, "Preparing emulator files…", 13, MUTED, false);
+        probeButton = button(body, "Test ARM64 CPU execution");
+        probeButton.setEnabled(false);
+        probeButton.setOnClickListener(v -> runSmokeTest());
+        copyProbeButton = button(body, "Copy diagnostic report");
+        copyProbeButton.setEnabled(false);
+        copyProbeButton.setOnClickListener(v -> copyProbeReport());
         addGap(body, 22);
 
         addText(body, "5. Launch", 19, FG, true);
@@ -134,15 +154,48 @@ public final class MainActivity extends Activity {
                                         + " / " + (total / (1024 * 1024)) + " MiB"));
                             }
                         });
-                runOnUiThread(() -> runtimeStatus.setText(
-                        "ARM64 runtime verified • " + result.version
-                        + " • " + result.files + " files"
-                        + (result.reused ? " (already prepared)" : " (installed)")));
+                runOnUiThread(() -> {
+                    preparedRuntimeDirectory = result.directory;
+                    runtimeStatus.setText("ARM64 runtime verified • " + result.version
+                            + " • " + result.files + " files"
+                            + (result.reused ? " (already prepared)" : " (installed)"));
+                    probeStatus.setText("Ready for the FEXCore execution test.");
+                    probeButton.setEnabled(true);
+                });
             } catch (Exception error) {
-                runOnUiThread(() -> runtimeStatus.setText(
-                        "Native runtime not ready: " + error.getMessage()));
+                runOnUiThread(() -> {
+                    runtimeStatus.setText("Native runtime not ready: " + error.getMessage());
+                    probeStatus.setText("Cannot run the test until the runtime is ready.");
+                });
             }
         });
+    }
+
+    private void runSmokeTest() {
+        if (preparedRuntimeDirectory == null || smokeRunning) return;
+        smokeRunning = true;
+        probeButton.setEnabled(false);
+        probeStatus.setText("Running ARM64 FEXCore smoke test (up to 20 seconds)…");
+        Path runtimeDirectory = preparedRuntimeDirectory;
+        runtimeWorker.submit(() -> {
+            Arm64SmokeRunner.Result result = Arm64SmokeRunner.run(this, runtimeDirectory);
+            runOnUiThread(() -> {
+                smokeRunning = false;
+                probeButton.setEnabled(true);
+                lastProbeReport = result.report;
+                copyProbeButton.setEnabled(true);
+                probeStatus.setText((result.succeeded ? "PASS" : "NOT YET WORKING")
+                        + "\n" + result.report.substring(0, Math.min(1400, result.report.length())));
+            });
+        });
+    }
+
+    private void copyProbeReport() {
+        if (lastProbeReport == null) return;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText("RB4DX ARM64 diagnostics", lastProbeReport));
+        Toast.makeText(this, "Diagnostic report copied", Toast.LENGTH_SHORT).show();
     }
 
     private void chooseGameFolder() {

@@ -34,6 +34,17 @@ integrating the backend.
   duplicate or missing entries are rejected.
 - The Play button remains disabled until a real Android launch bridge works.
 
+## First on-device CPU execution experiment
+
+The debug APK has a separate application ID so it can be installed alongside
+the working importer without deleting the user's Deluxe data. It bundles the
+patched AArch64 glibc dynamic loader in Android's native-library directory and
+offers a manual button to run the upstream FEXCore smoke executable for up to
+20 seconds. It captures the exit code and subprocess output and offers a Copy
+Report button. This is a real CPU process execution attempt, not PS4 game
+emulation. Android may deny the launch, and even a successful smoke run does
+not establish Vulkan graphics, game-directory access, or RB4DX compatibility.
+
 ## Minimum backend contract
 
 ```text
