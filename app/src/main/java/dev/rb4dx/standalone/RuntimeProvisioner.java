@@ -128,7 +128,8 @@ final class RuntimeProvisioner {
         Path installed = base.resolve(version);
         Path marker = installed.resolve(MARKER);
         if (Files.isRegularFile(marker)
-                && version.equals(Files.readString(marker, StandardCharsets.UTF_8).trim())
+                && version.equals(new String(
+                        Files.readAllBytes(marker), StandardCharsets.UTF_8).trim())
                 && Files.isRegularFile(installed.resolve("host/shadps4-arm64-fex"))
                 && Files.isRegularFile(installed.resolve("host/lib/libvulkan_vortek.so"))) {
             return new Result(version, entries.length(), total, true, installed);
@@ -184,7 +185,8 @@ final class RuntimeProvisioner {
             if (seen.size() != expected.size() || extracted != total) {
                 throw new IOException("Incomplete native runtime ZIP");
             }
-            Files.writeString(staging.resolve(MARKER), version + "\n", StandardCharsets.UTF_8);
+            Files.write(staging.resolve(MARKER),
+                    (version + "\n").getBytes(StandardCharsets.UTF_8));
             // An interrupted previous install may have left an incomplete
             // directory. It is app-generated, so it is safe to replace.
             deleteOwnedDirectory(installed, base);
