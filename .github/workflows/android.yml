@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch]
     paths:
       - 'app/**'
       - 'native/vortek/**'
@@ -44,6 +44,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
+          elif [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" ]]; then
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=$GITHUB_REF_NAME&per_page=1" --jq '.workflow_runs[0].id')"
           else
             run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')"
           fi
@@ -51,8 +53,14 @@ jobs:
             echo "No successful native runtime available" >&2
             exit 1
           fi
+          native_branch="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_branch')"
+          if [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" && \
+                "$native_branch" != "$GITHUB_REF_NAME" ]]; then
+            echo "Refusing native runtime from another branch: $native_branch" >&2
+            exit 1
+          fi
           echo "id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "Using native runtime from GitHub Actions run $run_id"
+          echo "Using native runtime from GitHub Actions run $run_id (branch $native_branch)"
 
       - name: Download verified Linux ARM64 runtime
         uses: actions/download-artifact@v4
@@ -259,7 +267,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip' versionCode='15' versionName='0.12.9-gpu-diagnostics'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip' versionCode='16' versionName='0.12.10-feedback-loop-guard'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
