@@ -13,6 +13,19 @@ This app uses the real Android Vortek transport server compiled from the
   zenithblue-oss/shadps4-arm64 `runtime/vortek-protocol/bachata_vortek_protocol.h`
   (LGPL-2.1-or-later). A wire-compatible subset is included in this bridge.
 
+An **optional** ARM64 Mesa Turnip Vulkan backend is packaged as a native
+Android library for driver comparison. It is selected within RB4DX and never
+replaces the phone's system GPU driver:
+
+- Source project: Mesa 3D, Freedreno/Turnip (upstream source and license
+  notices: https://gitlab.freedesktop.org/mesa/mesa).
+- Prebuilt Android AdrenoTools release: The412Banner/Banners-Turnip,
+  `v27.0.0-20261105-r5`, `Turnip-v27.0.0-20261105-r5.zip`.
+- Pinned distribution archive SHA-256:
+  `0e00f9a85105d0df992858728d01dd9398df9eae478d27da35df3ce7690d4908`.
+- This third-party binary is not a compatibility guarantee; source/asset
+  provenance and its SHA-256 are recorded in the Android build workflow.
+
 The Android server is linked to an app-private Unix socket, negotiates the
 Bachata handshake, and sends shared memory file descriptors to the pinned Linux
 Vulkan client. **This milestone does

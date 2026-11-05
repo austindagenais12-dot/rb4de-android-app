@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.12.2-vortek-handshake"
+        versionCode = 12
+        versionName = "0.12.6-turnip-backend-test"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -46,7 +46,6 @@ android {
             useLegacyPackaging = true
             keepDebugSymbols.add("**/librb4dx_host_loader.so")
             keepDebugSymbols.add("**/librb4dx_glibc_fileprobe.so")
-            keepDebugSymbols.add("**/librb4dx_x11_server.so")
         }
     }
 

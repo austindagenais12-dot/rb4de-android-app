@@ -2,6 +2,7 @@
 package dev.rb4dx.standalone;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Environment;
 import android.view.SurfaceHolder;
@@ -103,6 +104,20 @@ final class GameBootProbe {
                 .append("game_patch_loading=false\n")
                 .append("vulkan_icd_file=").append(vulkanDriverFile).append('\n');
 
+        // This selects the Android driver behind Vortek. The glibc shadPS4
+        // process must still use its pinned, app-private Vortek client ICD.
+        SharedPreferences gpuPreferences = context.getSharedPreferences("rb4dx", Context.MODE_PRIVATE);
+        boolean useTurnip = gpuPreferences.getBoolean("gpu_turnip_enabled", false);
+        Path turnipLibrary = Path.of(context.getApplicationInfo().nativeLibraryDir,
+                "libvulkan_freedreno.so");
+        if (useTurnip && !Files.isRegularFile(turnipLibrary)) {
+            report.append("android_gpu_driver=turnip\nturnip_driver_available=false\n");
+            return failed(report, "Turnip selected but bundled driver is missing; install the full APK or select System Adreno");
+        }
+        report.append("android_gpu_driver=").append(useTurnip ? "turnip" : "system_adreno").append('\n')
+                .append("turnip_driver_available=")
+                .append(Files.isRegularFile(turnipLibrary)).append('\n');
+
         int serverFd = -1;
         ExecutorService listener = null;
         Process process = null;
@@ -129,7 +144,8 @@ final class GameBootProbe {
             // the endpoint app-private and tied to this one launch session.
             // Preview is only taken when the producer is fully stopped.
             // The embedded X11 window is not yet connected to a live surface.
-            vortek = new VortekRendererComponent(context, previewSurface);
+            vortek = new VortekRendererComponent(context, previewSurface,
+                    useTurnip ? turnipLibrary.toString() : null);
             if (!vortek.start(vortekSocket.toString())) {
                 return failed(report, "Unable to start Android Vortek Vulkan transport server");
             }

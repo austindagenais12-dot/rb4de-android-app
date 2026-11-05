@@ -49,12 +49,14 @@ public final class VortekRendererComponent implements AutoCloseable {
         public String[] exposedDeviceExtensions = null;
     }
 
-    public VortekRendererComponent(Context context, SurfaceHolder holder) {
+    public VortekRendererComponent(Context context, SurfaceHolder holder, String libvulkanPath) {
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         width = Math.max(1, metrics.widthPixels);
         height = Math.max(1, metrics.heightPixels);
         previewHolder = holder;
-        initVulkanWrapper(context.getApplicationInfo().nativeLibraryDir, null);
+        // The pinned Vortek JNI already loads custom AdrenoTools drivers when
+        // provided an absolute library path. Null preserves system Vulkan.
+        initVulkanWrapper(context.getApplicationInfo().nativeLibraryDir, libvulkanPath);
     }
 
     public int windowUpdateCount() { return windowUpdates.get(); }

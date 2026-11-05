@@ -39,6 +39,7 @@ public final class MainActivity extends Activity {
     private static final String PREFS = "rb4dx";
     private static final String GAME_URI = "game_tree_uri";
     private static final String TITLE_ID = "title_id";
+    private static final String GPU_TURNIP_ENABLED = "gpu_turnip_enabled";
     private static final int BG = Color.rgb(15, 16, 24);
     private static final int FG = Color.rgb(239, 240, 247);
     private static final int MUTED = Color.rgb(174, 179, 197);
@@ -60,6 +61,10 @@ public final class MainActivity extends Activity {
     private TextView glibcFileStatus;
     private TextView vulkanFrameStatus;
     private TextView gameBootStatus;
+    private TextView turnipStatus;
+    private RadioGroup gpuDrivers;
+    private RadioButton systemGpuRadio;
+    private RadioButton turnipGpuRadio;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
@@ -232,6 +237,36 @@ public final class MainActivity extends Activity {
         addGap(body, 22);
 
         addText(body, "8. Android Vulkan display bridge", 19, FG, true);
+        addText(body, "Vortek graphics driver", 18, FG, true);
+        addText(body,
+                "The system Adreno driver is the default. The APK also bundles a pinned ARM64 "
+                        + "Mesa Turnip driver to test the real-game Vortek graphics backend. "
+                        + "Changing the selection does not replace your phone's system driver. "
+                        + "The blue Vulkan surface tests still use system Adreno.",
+                14, MUTED, false);
+        turnipStatus = addText(body, "Checking bundled Turnip driver…", 13, MUTED, false);
+        gpuDrivers = new RadioGroup(this);
+        gpuDrivers.setOrientation(RadioGroup.VERTICAL);
+        systemGpuRadio = radio("System Adreno (default)");
+        turnipGpuRadio = radio("Mesa Turnip (Vortek game test)");
+        gpuDrivers.addView(systemGpuRadio);
+        gpuDrivers.addView(turnipGpuRadio);
+        gpuDrivers.check(preferences.getBoolean(GPU_TURNIP_ENABLED, false)
+                ? turnipGpuRadio.getId() : systemGpuRadio.getId());
+        gpuDrivers.setOnCheckedChangeListener((group, id) -> {
+            boolean turnip = id == turnipGpuRadio.getId();
+            if (turnip && !turnipDriverExists()) {
+                Toast.makeText(this, "Bundled Turnip library is missing from this APK",
+                        Toast.LENGTH_LONG).show();
+                group.check(systemGpuRadio.getId());
+                return;
+            }
+            preferences.edit().putBoolean(GPU_TURNIP_ENABLED, turnip).apply();
+            refreshTurnipStatus();
+        });
+        body.addView(gpuDrivers);
+        refreshTurnipStatus();
+        addGap(body, 12);
         addText(body,
                 "Tests the real Vulkan driver against an Android SurfaceView: GPU enumeration, "
                         + "surface creation, present-capable queues, and swapchain support. "
@@ -325,6 +360,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshNativeAccessStatus();
+        refreshTurnipStatus();
     }
 
     private void openAllFilesSettings() {
@@ -676,6 +712,22 @@ public final class MainActivity extends Activity {
             }
         } else if (requestCode == PICK_DELUXE) {
             runDeluxeImport(uri);
+        }
+    }
+
+    private boolean turnipDriverExists() {
+        return Files.isRegularFile(Path.of(getApplicationInfo().nativeLibraryDir,
+                "libvulkan_freedreno.so"));
+    }
+
+    private void refreshTurnipStatus() {
+        if (turnipStatus == null) return;
+        if (!turnipDriverExists()) {
+            turnipStatus.setText("Bundled ARM64 Turnip library missing. Use system Adreno.");
+        } else {
+            boolean enabled = preferences.getBoolean(GPU_TURNIP_ENABLED, false);
+            turnipStatus.setText((enabled ? "Selected: Mesa Turnip" : "Selected: System Adreno")
+                    + " | Bundled ARM64 Turnip library ready");
         }
     }
 

@@ -191,6 +191,35 @@ jobs:
           for lib in libwinlator.so libvortekrenderer.so librb4dx_vortek_bridge.so; do
             readelf -h "app/src/main/jniLibs/arm64-v8a/$lib" | grep -Eq 'Machine:.*AArch64'
           done
+      # Mesa Turnip is bundled in the APK's nativeLibraryDir, not extracted
+      # at runtime into writable app storage (blocked for target SDK 29+).
+      # Keep the release URL and digest pinned: never silently pull latest.
+      - name: Bundle pinned ARM64 Mesa Turnip GPU driver (optional backend)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          turnip_release=v27.0.0-20261105-r5
+          turnip_asset=Turnip-v27.0.0-20261105-r5.zip
+          turnip_sha256=0e00f9a85105d0df992858728d01dd9398df9eae478d27da35df3ce7690d4908
+          archive_dir="$RUNNER_TEMP/rb4dx-pinned-turnip"
+          mkdir -p "$archive_dir"
+          gh release download "$turnip_release" \
+            --repo The412Banner/Banners-Turnip \
+            --pattern "$turnip_asset" --dir "$archive_dir"
+          archive="$archive_dir/$turnip_asset"
+          echo "$turnip_sha256  $archive" | sha256sum --check --status
+          mapfile -t driver_entries < <(unzip -Z1 "$archive" | grep -E '(^|/)libvulkan_freedreno\.so$')
+          if [[ "${#driver_entries[@]}" -ne 1 ]]; then
+            echo "Expected exactly one libvulkan_freedreno.so in pinned Turnip ZIP" >&2
+            exit 1
+          fi
+          unzip -p "$archive" "${driver_entries[0]}" \
+            > app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno.so
+          test -s app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno.so |
+            grep -Eq 'Machine:.*AArch64'
       # Android's implicit debug.keystore lives in an unpredictable location
       # on these hosted runners. Use a clearly scoped key generated once in a
       # known path, and reuse it for subsequent versions of this test package.
@@ -223,7 +252,7 @@ jobs:
           test -s "$apk"
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
-              librb4dx_vortek_bridge.so; do
+              librb4dx_vortek_bridge.so libvulkan_freedreno.so; do
             unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$name"
           done
       - uses: actions/upload-artifact@v4
