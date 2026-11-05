@@ -73,7 +73,7 @@ final class StandaloneX11Server implements AutoCloseable {
             Process process = builder.start();
             StandaloneX11Server session = new StandaloneX11Server(display, authority, log, process);
             if (!session.awaitReady(STARTUP_TIMEOUT_MS)) {
-                String output = Files.readString(log);
+                String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
                 session.close();
                 throw new IOException("Embedded X11 did not become ready: "
                         + output.substring(0, Math.min(output.length(), 3000)));
@@ -106,7 +106,8 @@ final class StandaloneX11Server implements AutoCloseable {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
         String expected = "RB4DX_X11_READY display=" + display;
         while (System.nanoTime() < deadline) {
-            if (Files.readString(logFile).contains(expected)) return process.isAlive();
+            String log = new String(Files.readAllBytes(logFile), StandardCharsets.UTF_8);
+            if (log.contains(expected)) return process.isAlive();
             if (!process.isAlive()) return false;
             try {
                 Thread.sleep(75);
