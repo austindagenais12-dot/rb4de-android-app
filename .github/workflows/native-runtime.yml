@@ -2,6 +2,17 @@ name: Build ARM64 emulator runtime (experimental)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-runtime.yml'
+      - 'scripts/build-native-runtime.sh'
+      - 'scripts/verify-native-runtime.py'
+
+# Automatically replace a stale in-flight build when a fix is pushed.
+concurrency:
+  group: native-runtime-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -24,28 +35,105 @@ jobs:
           git -C native-source submodule update --init --recursive --depth 1 --jobs 8
           test "$(git -C native-source rev-parse HEAD)" = be6bc2e9c60799e071dd2fafa6216e8d80ec619c
 
-      - name: Build in isolated Debian Trixie container
+      # This cache holds only the completed ARM64 binaries. We save it BEFORE
+      # the Vulkan translator / packaging steps, so later errors cannot waste
+      # another full native compilation.
+      - name: Restore completed ARM64 emulator
+        id: core_cache
+        uses: actions/cache/restore@v4
+        with:
+          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v1
+          path: |
+            native-source/runtime/build/shadps4-arm64-stage
+            native-source/runtime/build/fexcore-smoke-stage
+
+      # Keep one Debian container for both phases; install dependencies once.
+      - name: Start isolated Debian builder
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p native-output
-          docker run --rm \
+          docker run --detach --rm --name rb4dx-native-builder \
             --mount "type=bind,source=$PWD,target=/workspace" \
             --workdir /workspace \
             --env BACHATA_INSIDE_DEBIAN_CONTAINER=1 \
-            debian:trixie bash -lc '
-              set -euo pipefail
-              bash native-source/runtime/scripts/install-debian-runtime-deps.sh
-              # Vortek requires both vulkan.h and vk_icd.h during compilation.
-              apt-get install --yes --no-install-recommends libvulkan-dev
-              test -f /usr/include/vulkan/vulkan.h
-              test -f /usr/include/vulkan/vk_icd.h
-              # The checkout belongs to the host runner, not container root.
-              # Allow Git to read the pinned checkout and its nested submodules.
-              git config --global --add safe.directory /workspace/native-source
-              git config --global --add safe.directory "/workspace/native-source/*"
-              bash scripts/build-native-runtime.sh /workspace/native-source /workspace/native-output
-            '
+            debian:trixie sleep infinity
+
+      - name: Install dependencies and preflight checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec --workdir /workspace rb4dx-native-builder bash -lc '
+            set -euo pipefail
+            bash native-source/runtime/scripts/install-debian-runtime-deps.sh
+            apt-get install --yes --no-install-recommends libvulkan-dev
+            # The host runner owns the checkout mounted inside container root.
+            git config --global --add safe.directory /workspace/native-source
+            git config --global --add safe.directory "/workspace/native-source/*"
+            for executable in git clang clang++ cmake ninja node python3 aarch64-linux-gnu-gcc readelf; do
+              command -v "$executable" >/dev/null
+            done
+            test -f /usr/include/vulkan/vulkan.h
+            test -f /usr/include/vulkan/vk_icd.h
+            test -f native-source/runtime/scripts/build-vortek-client.sh
+            test -f native-source/runtime/locks/components.lock.json
+            echo "Preflight passed: Git, ARM64 compiler, Vulkan SDK, runtime scripts"
+          '
+
+      - name: Compile emulator and FEXCore (cache miss only)
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec --workdir /workspace rb4dx-native-builder bash -lc '
+            set -euo pipefail
+            bash native-source/runtime/scripts/build-shadps4-arm64.sh
+          '
+
+      - name: Verify the compiled ARM64 executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec --workdir /workspace rb4dx-native-builder bash -lc '
+            set -euo pipefail
+            test -s native-source/runtime/build/shadps4-arm64-stage/bin/shadps4-arm64
+            test -s native-source/runtime/build/shadps4-arm64-stage/needed.txt
+            test -s native-source/runtime/build/fexcore-smoke-stage/bin/fexcore-smoke
+            test -s native-source/runtime/build/fexcore-smoke-stage/bin/fexcore-guest-harness
+            readelf -h native-source/runtime/build/shadps4-arm64-stage/bin/shadps4-arm64 |
+              grep -Eq "Machine:.*AArch64"
+          '
+
+      - name: Cache compiled ARM64 emulator for future runs
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.core_cache.outputs.cache-primary-key }}
+          path: |
+            native-source/runtime/build/shadps4-arm64-stage
+            native-source/runtime/build/fexcore-smoke-stage
+
+      - name: Preserve emulator as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rb4dx-arm64-emulator-stage
+          path: |
+            native-source/runtime/build/shadps4-arm64-stage/bin/shadps4-arm64
+            native-source/runtime/build/shadps4-arm64-stage/needed.txt
+            native-source/runtime/build/fexcore-smoke-stage/bin/fexcore-smoke
+            native-source/runtime/build/fexcore-smoke-stage/bin/fexcore-guest-harness
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Build Vulkan translator and package runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec --workdir /workspace rb4dx-native-builder bash -lc '
+            set -euo pipefail
+            RB4DX_SKIP_EMULATOR_BUILD=1 bash scripts/build-native-runtime.sh /workspace/native-source /workspace/native-output
+          '
 
       - name: Upload Linux ARM64 runtime package
         uses: actions/upload-artifact@v4
@@ -56,4 +144,8 @@ jobs:
             native-output/manifest.json
           if-no-files-found: error
           compression-level: 0
+
+      - name: Stop Debian builder
+        if: always()
+        run: docker rm -f rb4dx-native-builder || true
 
