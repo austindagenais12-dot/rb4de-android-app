@@ -23,6 +23,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * the Vulkan producer has stopped. Continuous screen output is not ready.
  */
 public final class VortekRendererComponent implements AutoCloseable {
+    // Retain the GPU source until a later preview replaces it so Android's
+    // asynchronous compositor never samples a prematurely freed buffer.
+    private static Bitmap retainedPreview;
     private final Options options = new Options();
     private final int width;
     private final int height;
@@ -86,6 +89,11 @@ public final class VortekRendererComponent implements AutoCloseable {
                 canvas.drawBitmap(bitmap, null, bounds, paint);
             } finally {
                 surface.unlockCanvasAndPost(canvas);
+            }
+            synchronized (VortekRendererComponent.class) {
+                if (retainedPreview != null) retainedPreview.recycle();
+                retainedPreview = bitmap;
+                bitmap = null;
             }
             return true;
         } catch (RuntimeException exception) {
