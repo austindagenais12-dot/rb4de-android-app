@@ -45,7 +45,7 @@ jobs:
           # which the guest treated as a pointer and dereferenced.
           git -C native-source apply --check ../native/patches/rb4dx-sanitizer-hooks.patch
           git -C native-source apply ../native/patches/rb4dx-sanitizer-hooks.patch
-          rg -n 'sceKernelGetSanitizerMallocReplaceExternal' \
+          grep -n 'sceKernelGetSanitizerMallocReplaceExternal' \
             native-source/src/core/libraries/kernel/kernel.cpp
 
       # This cache holds only the completed ARM64 binaries. We save it BEFORE
