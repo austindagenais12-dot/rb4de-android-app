@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.9.0-real-game-startup-probe"
+        versionCode = 11
+        versionName = "0.9.1-portable-user-directory"
         ndk {
             abiFilters.add("arm64-v8a")
         }

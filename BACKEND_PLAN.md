@@ -128,6 +128,13 @@ The report records lifecycle messages, console errors and a checkpoint. This
 does not yet connect shadPS4's Linux SDL/Vulkan presentation to Android's
 SurfaceView and does not enable Play or inject Deluxe.
 
+First on-device real game attempt exited 33 before the emulator's Run marker:
+upstream user settings could not create `<files>/.local/share/shadPS4/home/1000`
+because the parent directory was absent. The next test prepares
+`<files>/shadps4/user/home/1000` and launches with cwd `<files>/shadps4`, so
+upstream chooses its existing portable `user` folder (also used by our Deluxe
+importer). This is an app-private, non-destructive directory fix.
+
 
 ```text
 Engine.start(

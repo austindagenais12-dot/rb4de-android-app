@@ -147,6 +147,12 @@ game executable is requested; no Deluxe plugin injection is attempted.
 
 The subprocess is stopped after at most 18 seconds, and the app reports its
 console output and lifecycle frames, including a best-effort startup checkpoint.
+In v0.9.1 the app creates the private portable user directory
+`<files>/shadps4/user/home/1000` and starts the Linux emulator with working
+directory `<files>/shadps4`. Upstream `path_util.cpp` then chooses its portable
+`user` directory instead of the uncreated `.local/share/shadPS4` fallback.
+This aligns paths with the existing Deluxe importer without touching shared
+game files or deleting existing app data.
 This experiment can fail before SDL/Vulkan window creation because the Linux
 emulator does not yet have a working Android graphics window service. A
 completed diagnostic is **not** proof of a playable game. No separate Deluxe

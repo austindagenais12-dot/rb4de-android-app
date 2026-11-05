@@ -57,6 +57,12 @@ final class GameBootProbe {
         }
         Path gameEboot = Path.of(gameFolder, "eboot.bin");
         Path files = context.getFilesDir().toPath().toAbsolutePath().normalize();
+        // Upstream path_util.cpp first checks <cwd>/user (portable layout).
+        // The previously used <files> cwd fell back to a nested XDG path whose
+        // parent directories did not exist. Prepare the portable user root
+        // within this app's private storage, matching DeluxeInstaller's layout.
+        Path emulatorWorkingDir = files.resolve("shadps4");
+        Path portableUserDir = emulatorWorkingDir.resolve("user");
         Path host = runtimeDirectory.resolve("host").normalize();
         Path emulator = host.resolve("shadps4-arm64-fex");
         Path loader = Path.of(context.getApplicationInfo().nativeLibraryDir,
@@ -78,6 +84,13 @@ final class GameBootProbe {
         Process process = null;
         File capture = null;
         try {
+            // This is idempotent and never replaces user content. The emulator
+            // needs an existing portable UserDir before its static path setup.
+            // Its default user manager may then create home/1000 beneath it.
+            Files.createDirectories(portableUserDir.resolve("home").resolve("1000"));
+            report.append("portable_user_dir=").append(portableUserDir).append('\n')
+                    .append("portable_user_dir_ready=true\n");
+
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
             if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd));
             int listeningFd = serverFd;
@@ -93,7 +106,7 @@ final class GameBootProbe {
                     "--bachata-storage-root", files.toString(),
                     "--game", gameEboot.toString(),
                     "--ignore-game-patch", "--config-clean", "--fullscreen", "false");
-            builder.directory(context.getFilesDir());
+            builder.directory(emulatorWorkingDir.toFile());
             builder.environment().put("HOME", files.toString());
             builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             builder.environment().put("LD_LIBRARY_PATH", host.toString());
