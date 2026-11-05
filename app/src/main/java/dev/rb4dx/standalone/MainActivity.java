@@ -59,6 +59,7 @@ public final class MainActivity extends Activity {
     private TextView nativeFileStatus;
     private TextView glibcFileStatus;
     private TextView vulkanFrameStatus;
+    private TextView gameBootStatus;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
@@ -74,6 +75,8 @@ public final class MainActivity extends Activity {
     private Button copyGlibcFileButton;
     private Button vulkanFrameButton;
     private Button copyVulkanFrameButton;
+    private Button gameBootButton;
+    private Button copyGameBootButton;
     private SurfaceView vulkanSurface;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
@@ -83,6 +86,7 @@ public final class MainActivity extends Activity {
     private String lastNativeFileReport;
     private String lastGlibcFileReport;
     private String lastVulkanFrameReport;
+    private String lastGameBootReport;
     private boolean smokeRunning;
     private boolean bridgeRunning;
     private boolean gamePreflightRunning;
@@ -90,6 +94,7 @@ public final class MainActivity extends Activity {
     private boolean nativeFileRunning;
     private boolean glibcFileRunning;
     private boolean vulkanFrameRunning;
+    private boolean gameBootRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -278,7 +283,27 @@ public final class MainActivity extends Activity {
         });
         addGap(body, 22);
 
-        addText(body, "9. Launch", 19, FG, true);
+        addText(body, "9. Real Rock Band 4 startup diagnostic", 19, FG, true);
+        addText(body,
+                "Starts the actual shadPS4 emulator on your selected vanilla Rock Band 4 "
+                        + "eboot.bin for at most 18 seconds, then stops it. It checks the "
+                        + "game version automatically and records the startup stage, "
+                        + "socket messages and emulator errors. This does NOT launch Deluxe "
+                        + "or display PS4 graphics. It may temporarily use substantial RAM.",
+                14, MUTED, false);
+        gameBootStatus = addText(body,
+                "Waiting for the verified native runtime, game folder and All files access…",
+                13, MUTED, false);
+        gameBootButton = button(body, "Test real Rock Band 4 initialization (18 sec)");
+        gameBootButton.setEnabled(false);
+        gameBootButton.setOnClickListener(v -> runGameBootProbe());
+        copyGameBootButton = button(body, "Copy real-game startup report");
+        copyGameBootButton.setEnabled(false);
+        copyGameBootButton.setOnClickListener(
+                v -> copyReport("RB4DX real game startup", lastGameBootReport));
+        addGap(body, 22);
+
+        addText(body, "10. Play", 19, FG, true);
         Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
@@ -326,6 +351,10 @@ public final class MainActivity extends Activity {
         if (glibcFileButton != null) {
             glibcFileButton.setEnabled(granted && selected != null
                     && preparedRuntimeDirectory != null && !glibcFileRunning);
+        }
+        if (gameBootButton != null) {
+            gameBootButton.setEnabled(granted && selected != null
+                    && preparedRuntimeDirectory != null && !gameBootRunning);
         }
         if (!granted) {
             nativeFileStatus.setText("Waiting for optional All files access permission.");
@@ -428,8 +457,33 @@ public final class MainActivity extends Activity {
                     probeStatus.setText("Cannot run the test until the runtime is ready.");
                     bridgeStatus.setText("Cannot run the test until the runtime is ready.");
                     glibcFileStatus.setText("Linux game-file test requires the verified runtime.");
+                    gameBootStatus.setText("Real-game startup diagnostic requires the runtime.");
                 });
             }
+        });
+    }
+
+    private void runGameBootProbe() {
+        if (gameBootRunning || preparedRuntimeDirectory == null
+                || !Environment.isExternalStorageManager()) return;
+        String saved = preferences.getString(GAME_URI, null);
+        if (saved == null) return;
+        gameBootRunning = true;
+        gameBootButton.setEnabled(false);
+        gameBootStatus.setText("Starting real shadPS4 with Rock Band 4; safety timeout 18 seconds…");
+        Path runtime = preparedRuntimeDirectory;
+        String title = selectedTitleId;
+        Uri gameUri = Uri.parse(saved);
+        runtimeWorker.submit(() -> {
+            GameBootProbe.Result result = GameBootProbe.run(this, runtime, gameUri, title);
+            runOnUiThread(() -> {
+                gameBootRunning = false;
+                lastGameBootReport = result.report;
+                copyGameBootButton.setEnabled(true);
+                refreshNativeAccessStatus();
+                gameBootStatus.setText(result.report.substring(0,
+                        Math.min(1900, result.report.length())));
+            });
         });
     }
 

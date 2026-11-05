@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.8.1-glibc-and-vulkan-frame"
+        versionCode = 10
+        versionName = "0.9.0-real-game-startup-probe"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -32,7 +32,7 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".linuxvk"
-            manifestPlaceholders["appLabel"] = "RB4DX Linux and Vulkan Test"
+            manifestPlaceholders["appLabel"] = "RB4DX Real Game Test"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }

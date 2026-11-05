@@ -136,6 +136,23 @@ of game compatibility.
 Android release package: `dev.rb4dx.standalone` (independent of Bachata).
 Current test build package: `dev.rb4dx.standalone.linuxvk`.
 
+### Timed real-game startup diagnostic (v0.9)
+
+After the already-passing Linux glibc file-read and Vulkan frame tests, the
+diagnostic app offers **Test real Rock Band 4 initialization (18 sec)**. It
+automatically rechecks the selected game's title ID and version `02.21`, then
+starts the actual ARM64 shadPS4 program with its original `--game` option and
+the existing Android Unix-domain lifecycle bridge. Only the original vanilla
+game executable is requested; no Deluxe plugin injection is attempted.
+
+The subprocess is stopped after at most 18 seconds, and the app reports its
+console output and lifecycle frames, including a best-effort startup checkpoint.
+This experiment can fail before SDL/Vulkan window creation because the Linux
+emulator does not yet have a working Android graphics window service. A
+completed diagnostic is **not** proof of a playable game. No separate Deluxe
+import is required, and the prior app is left installed. A selected folder,
+All files access permission and verified runtime are required.
+
 ## Test the Deluxe archive installer on a PC
 
 Run `bash tests/run.sh`; it compiles the Java-only installer with `javac`

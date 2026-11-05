@@ -117,6 +117,18 @@ surface, which remains an architectural task.
 
 ## Minimum backend contract
 
+### Controlled real-title startup probe
+
+Following on-device `RB4DX_GLIBC_GAME_ACCESS_PASS` and
+`RB4DX_VULKAN_FRAME_PASS`, the next diagnostic runs the **real** ARM64 shadPS4
+binary with the selected `CUSA02084` / `CUSA02901` 2.21 `eboot.bin`. It uses
+the tested Android control socket, an 18-second hard timeout, automatic
+read-only title/version validation, and a vanilla `--ignore-game-patch` launch.
+The report records lifecycle messages, console errors and a checkpoint. This
+does not yet connect shadPS4's Linux SDL/Vulkan presentation to Android's
+SurfaceView and does not enable Play or inject Deluxe.
+
+
 ```text
 Engine.start(
   gameFolder = <native-readable mount of selected Android tree URI>,
