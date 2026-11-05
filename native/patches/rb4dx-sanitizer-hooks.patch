@@ -1,0 +1,39 @@
+diff --git a/src/core/libraries/kernel/kernel.cpp b/src/core/libraries/kernel/kernel.cpp
+--- a/src/core/libraries/kernel/kernel.cpp
++++ b/src/core/libraries/kernel/kernel.cpp
+@@ -258,6 +258,23 @@
+ void* PS4_SYSV_ABI sceKernelGetSanitizerNewReplaceExternal() {
+     LOG_TRACE(Kernel, "(STUBBED) sanitizer disabled, returning nullptr");
+     return nullptr;
+ }
+ 
++// Retail games query these optional AddressSanitizer replacement hooks while
++// loading libc.prx. A missing hook is a null function pointer, not -ENOSYS.
++void* PS4_SYSV_ABI sceKernelGetSanitizerNewReplace() {
++    LOG_TRACE(Kernel, "(STUBBED) sanitizer disabled, returning nullptr");
++    return nullptr;
++}
++
++void* PS4_SYSV_ABI sceKernelGetSanitizerMallocReplace() {
++    LOG_TRACE(Kernel, "(STUBBED) sanitizer disabled, returning nullptr");
++    return nullptr;
++}
++
++void* PS4_SYSV_ABI sceKernelGetSanitizerMallocReplaceExternal() {
++    LOG_TRACE(Kernel, "(STUBBED) sanitizer disabled, returning nullptr");
++    return nullptr;
++}
++
+ s32 PS4_SYSV_ABI sceKernelGetAllowedSdkVersionOnSystem(s32* ver) {
+@@ -562,5 +579,11 @@
+     LIB_FUNCTION("pB-yGZ2nQ9o", "libkernel", 1, "libkernel", _sceKernelSetThreadAtexitCount);
+     LIB_FUNCTION("WhCc1w3EhSI", "libkernel", 1, "libkernel", _sceKernelSetThreadAtexitReport);
+     LIB_FUNCTION("bnZxYgAFeA0", "libkernel", 1, "libkernel",
+                  sceKernelGetSanitizerNewReplaceExternal);
++    LIB_FUNCTION("F4Kib3Mb0wI", "libkernel", 1, "libkernel",
++                 sceKernelGetSanitizerNewReplace);
++    LIB_FUNCTION("bt0POEUZddE", "libkernel", 1, "libkernel",
++                 sceKernelGetSanitizerMallocReplace);
++    LIB_FUNCTION("py6L8jiVAN8", "libkernel", 1, "libkernel",
++                 sceKernelGetSanitizerMallocReplaceExternal);
+ }
