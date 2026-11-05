@@ -36,6 +36,10 @@ jobs:
             debian:trixie bash -lc '
               set -euo pipefail
               bash native-source/runtime/scripts/install-debian-runtime-deps.sh
+              # Vortek requires both vulkan.h and vk_icd.h during compilation.
+              apt-get install --yes --no-install-recommends libvulkan-dev
+              test -f /usr/include/vulkan/vulkan.h
+              test -f /usr/include/vulkan/vk_icd.h
               # The checkout belongs to the host runner, not container root.
               # Allow Git to read the pinned checkout and its nested submodules.
               git config --global --add safe.directory /workspace/native-source
