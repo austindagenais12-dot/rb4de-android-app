@@ -11,7 +11,7 @@ set(WINLATOR_NATIVE "${WINLATOR_SOURCE}/app/src/main/cpp")
 # Several pinned upstream utility headers rely on standard C declarations
 # supplied by their original Android build. Include them in this standalone
 # build without changing the upstream source tree.
-add_compile_options(-include time.h -include string.h -include stdlib.h)
+add_compile_options(-include "${CMAKE_CURRENT_SOURCE_DIR}/upstream_compat.h")
 include_directories(
   "${WINLATOR_NATIVE}/winlator/include"
   "${WINLATOR_NATIVE}/libadrenotools/include")
