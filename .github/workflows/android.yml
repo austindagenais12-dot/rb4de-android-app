@@ -3,7 +3,9 @@ name: Build Android Linux storage and Vulkan frame APK
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ['Build ARM64 emulator runtime (experimental)']
+    workflows:
+      - 'Build ARM64 emulator runtime (experimental)'
+      - 'Build independent Android X11 engine'
     types: [completed]
   push:
     branches: [main]
@@ -38,7 +40,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_run" && \
+                "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
           else
             run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')"
@@ -82,6 +85,43 @@ jobs:
             > app/src/main/jniLibs/arm64-v8a/librb4dx_host_loader.so
           test -s app/src/main/jniLibs/arm64-v8a/librb4dx_host_loader.so
           readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_host_loader.so |
+            grep -Eq 'Machine:.*AArch64'
+
+      - name: Find successful independent X11 server build
+        id: x11_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" && \
+                "${{ github.event.workflow_run.name }}" == "Build independent Android X11 engine" ]]; then
+            run_id="${{ github.event.workflow_run.id }}"
+          else
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/display-runtime.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          fi
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo 'No verified Android X11 server build yet' >&2
+            exit 1
+          fi
+          echo "id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download independent native X11 server
+        uses: actions/download-artifact@v4
+        with:
+          name: rb4dx-android-x11-native-stage
+          run-id: ${{ steps.x11_run.outputs.id }}
+          github-token: ${{ github.token }}
+          path: x11-native-artifact
+
+      - name: Package native X11 server executable into APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s x11-native-artifact/rb4dx-x11-server-arm64
+          cp x11-native-artifact/rb4dx-x11-server-arm64 \
+            app/src/main/jniLibs/arm64-v8a/librb4dx_x11_server.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_x11_server.so |
             grep -Eq 'Machine:.*AArch64'
 
       - name: Compile read-only Linux ARM64 glibc game probe
@@ -132,5 +172,5 @@ jobs:
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-glibc-vulkan-frame-debug
+          name: rb4dx-x11-window-startup-debug
           path: app/build/outputs/apk/debug/*.apk

@@ -153,11 +153,18 @@ directory `<files>/shadps4`. Upstream `path_util.cpp` then chooses its portable
 `user` directory instead of the uncreated `.local/share/shadPS4` fallback.
 This aligns paths with the existing Deluxe importer without touching shared
 game files or deleting existing app data.
-This experiment can fail before SDL/Vulkan window creation because the Linux
-emulator does not yet have a working Android graphics window service. A
-completed diagnostic is **not** proof of a playable game. No separate Deluxe
-import is required, and the prior app is left installed. A selected folder,
-All files access permission and verified runtime are required.
+The v0.9.1 phone report reached SDL3 but stopped at `No available video device`.
+The v0.10 experimental build bundles a separately compiled Android X11 server,
+starts it with an app-private MIT-MAGIC-COOKIE and TCP listening disabled,
+and passes its ready `DISPLAY`/`XAUTHORITY` to the Linux game process. This
+replaces the old assumption that Android has a Linux graphical desktop.
+
+**The display server and the Android game renderer are distinct components.**
+The v0.10 work does not yet attach an X11 render output to the Android
+SurfaceView or start a matching Android Vulkan proxy. This remains a bounded
+diagnostic; no Deluxe plugin is requested, no playable game is claimed, and
+the Play button stays disabled. A selected folder, All files access permission
+and verified runtime are required.
 
 ## Test the Deluxe archive installer on a PC
 
@@ -169,5 +176,7 @@ native-runtime manifest/hash validation.
 
 This launcher code is GPL-2.0-or-later. When the upstream shadPS4 core is
 integrated, comply with its GPL license and provide the corresponding source.
+The separately compiled embedded X11 engine is GPL-3.0; its pinned source,
+build steps and license are recorded in `native/DISPLAY_BACKEND.md`.
 RB4DX is an independent fan project: https://rb4dx.milohax.org/
 

@@ -26,15 +26,19 @@ runtime, so failed window-integration work cannot overwrite or needlessly
 recompile the game emulator. It publishes the native engine smoke host, an
 Android ARM64 `rb4dx-x11-server` process executable, license and API header.
 The server prints `RB4DX_X11_READY` only after its Xorg socket is ready.
-Packaging, app-process lifecycle, authorization and Android rendering still
-require separate integration. This artifact is not an APK or a game-boot claim.
+The Android build now downloads this artifact, bundles the native server under
+its own executable native-library directory, creates an app-private Xauthority
+cookie, and starts the server before a bounded vanilla game attempt. SDL gets
+the actual `DISPLAY`/`XAUTHORITY` environment, not a dummy driver.
+The app still has no X11-to-SurfaceView presenter or Vulkan proxy; a successful
+server handshake cannot be interpreted as a complete game boot.
 
 ## Remaining engineering, in dependency order
 
-1. Package the X11 service executable in an Android-executable location;
-   integrate it as an isolated Android component/service with a
-   private, authenticated Unix-domain display socket and deterministic startup
-   and shutdown. Display socket permissions must restrict access to this app.
+1. Verify the bundled X11 server can create its authenticated display and
+   that Linux SDL3 can connect to that display without `SDL_Init` failing. The
+   startup process currently uses a child process managed by the bounded
+   diagnostic rather than a persistent Android Service.
 2. Supply the native display renderer and attach/detach its `ANativeWindow`
    to the app's live Android `SurfaceView`; prove a Linux SDL3 Vulkan window
    actually opens through the local X11 service, independent of the game.

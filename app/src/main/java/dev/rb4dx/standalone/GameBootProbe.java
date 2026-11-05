@@ -37,8 +37,8 @@ final class GameBootProbe {
 
     static Result run(Context context, Path runtimeDirectory, Uri gameTree,
             String expectedTitle) {
-        StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V1\n")
-                .append("mode=REAL_SHADPS4_VANILLA_TIMED_STARTUP\n")
+        StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V2\n")
+                .append("mode=REAL_SHADPS4_EMBEDDED_X11_STARTUP\n")
                 .append("max_runtime_ms=").append(TIMEOUT_MS).append('\n');
         if (!Environment.isExternalStorageManager()) {
             return failed(report, "All files access permission was not granted");
@@ -77,12 +77,15 @@ final class GameBootProbe {
                 .append("game_path=").append(gameEboot).append('\n')
                 .append("app_data_only=true\n")
                 .append("deluxe_plugin_requested=false\n")
-                .append("game_patch_loading=false\n");
+                .append("game_patch_loading=false\n")
+                .append("android_surface_attached=false\n")
+                .append("vulkan_proxy_attached=false\n");
 
         int serverFd = -1;
         ExecutorService listener = null;
         Process process = null;
         File capture = null;
+        StandaloneX11Server x11 = null;
         try {
             // This is idempotent and never replaces user content. The emulator
             // needs an existing portable UserDir before its static path setup.
@@ -90,6 +93,13 @@ final class GameBootProbe {
             Files.createDirectories(portableUserDir.resolve("home").resolve("1000"));
             report.append("portable_user_dir=").append(portableUserDir).append('\n')
                     .append("portable_user_dir_ready=true\n");
+
+            // This is a genuine private Xorg socket, not the SDL dummy driver.
+            // A complete on-screen renderer and Vulkan proxy are still pending.
+            x11 = StandaloneX11Server.start(context, runtimeDirectory);
+            report.append("x11_ready=true\n")
+                    .append("x11_display=").append(x11.display).append('\n')
+                    .append("x11_authentication=true\n");
 
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
             if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd));
@@ -111,6 +121,10 @@ final class GameBootProbe {
             builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             builder.environment().put("LD_LIBRARY_PATH", host.toString());
             builder.environment().put("GLIBC_TUNABLES", "glibc.pthread.rseq=0");
+            builder.environment().put("DISPLAY", x11.display);
+            builder.environment().put("XAUTHORITY", x11.authority.toString());
+            builder.environment().put("SDL_VIDEODRIVER", "x11");
+            builder.environment().put("XDG_RUNTIME_DIR", files.resolve("x11-session/runtime").toString());
             builder.redirectErrorStream(true);
             builder.redirectOutput(capture);
 
@@ -150,6 +164,7 @@ final class GameBootProbe {
             return failed(report, error.getClass().getSimpleName() + ": " + error.getMessage());
         } finally {
             if (process != null && process.isAlive()) process.destroyForcibly();
+            if (x11 != null) x11.close();
             if (listener != null) listener.shutdownNow();
             if (serverFd >= 0) NativeRuntimeSocket.closeServer(serverFd);
             if (capture != null) capture.delete();

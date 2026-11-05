@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.9.1-portable-user-directory"
+        versionCode = 12
+        versionName = "0.10.0-embedded-x11-startup"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -46,6 +46,7 @@ android {
             useLegacyPackaging = true
             keepDebugSymbols.add("**/librb4dx_host_loader.so")
             keepDebugSymbols.add("**/librb4dx_glibc_fileprobe.so")
+            keepDebugSymbols.add("**/librb4dx_x11_server.so")
         }
     }
 
