@@ -59,7 +59,7 @@ does not establish Vulkan graphics, game-directory access, or RB4DX support.
 
 ## Native control-channel experiment
 
-The current Android `.bridge` debug app adds `librb4dx_bridge.so`, implemented
+The Android diagnostic app adds `librb4dx_bridge.so`, implemented
 independently with NDK JNI. A native filesystem Unix-domain socket listens in
 this app's own private files directory while the verified glibc loader launches
 the shadPS4 ARM64 executable. It deliberately passes a nonexistent eboot path.

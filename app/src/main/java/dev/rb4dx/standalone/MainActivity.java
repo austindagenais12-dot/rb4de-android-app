@@ -286,7 +286,7 @@ public final class MainActivity extends Activity {
                 14, MUTED, false);
         addGap(body, 16);
         addText(body,
-                "Independent package dev.rb4dx.standalone • Does not modify Bachata S4",
+                "Independent test install • Preserves the previous RB4DX app and Bachata S4",
                 12, MUTED, false);
 
         setContentView(scroll);

@@ -26,9 +26,11 @@ It does not modify or share storage with Bachata S4.
   now launch the Linux emulator for a controlled invalid-game startup test;
   launching a real game is not supported yet.
 * Previous phone probes verified that the glibc loader, FEXCore CPU translation,
-  and the real shadPS4 command-line executable run under Android 16. The new
-  bridge-test APK uses `dev.rb4dx.standalone.bridge`, installing alongside the
-  original importer and older diagnostic apps so imported assets are preserved.
+  and the real shadPS4 command-line executable run under Android 16. The
+  v0.8.1 Linux/Vulkan test APK uses `dev.rb4dx.standalone.linuxvk`, installing
+  **alongside** the older `.bridge` and importer packages. Users should keep
+  the older app installed; the new package can run both tests without importing
+  Deluxe again. Saved folder access must be selected separately in the new app.
 * The new **Test native control channel** button binds a real Android filesystem
   Unix-domain socket (JNI/NDK), starts shadPS4 with its upstream
   `--bachata-socket` control-protocol option, and records the emulator's own
@@ -95,10 +97,12 @@ Gradle 8.11.1. GitHub Actions workflow android.yml selects the latest
 successful native runtime, verifies its ZIP and manifest, stages both as
 Android assets, stages the glibc ARM64 loader as a native library, and builds
 the runtime-stage debug APK automatically.
-The workflow caches a non-production **debug signing key** for future debug
-builds, so once the user installs the v0.7 test package, subsequent builds
-should update without requiring uninstall/reimport while that CI cache remains
-available. This key is for debugging only, not for a future production release.
+The workflow generates a scoped, non-production **debug signing key** into
+`.ci-signing` on the first build and stores it in a CI cache for subsequent
+`.linuxvk` builds. Future test packages can update each other while that
+cache remains available. The previous `.bridge` debug build used a different
+ephemeral signature, which is why `.linuxvk` is a separate install. This key
+is for debugging only, not for a future production release.
 On the phone, the app extracts and verifies the runtime on first launch.
 For local Gradle builds, supply both native runtime assets under
 app/src/main/assets/runtime first. Do not commit the large binary to Git.
@@ -130,7 +134,7 @@ GitHub Actions. The diagnostic bridge is not a working Play button or evidence
 of game compatibility.
 
 Android release package: `dev.rb4dx.standalone` (independent of Bachata).
-Current test build package: `dev.rb4dx.standalone.bridge`.
+Current test build package: `dev.rb4dx.standalone.linuxvk`.
 
 ## Test the Deluxe archive installer on a PC
 

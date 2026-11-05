@@ -106,13 +106,26 @@ jobs:
         with:
           packages: ''
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;26.3.11579264' 'cmake;3.22.1'
-      # The development package is test-only. Reuse its debug key so later
-      # test builds can update in place without losing user-granted folder URIs.
+      # Android's implicit debug.keystore lives in an unpredictable location
+      # on these hosted runners. Use a clearly scoped key generated once in a
+      # known path, and reuse it for subsequent versions of this test package.
       - name: Cache test-only Android signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: rb4dx-test-only-debug-signing-v1
+          path: .ci-signing/rb4dx-test.keystore
+          key: rb4dx-ci-linuxvk-signing-v1
+      - name: Create test-only signing key on first build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-signing
+          if [[ ! -s .ci-signing/rb4dx-test.keystore ]]; then
+            keytool -genkeypair -noprompt -storetype PKCS12 \
+              -keystore .ci-signing/rb4dx-test.keystore \
+              -storepass android -keypass android -alias rb4dx-test \
+              -keyalg RSA -keysize 3072 -validity 3650 \
+              -dname 'CN=RB4DX Independent Android Test, OU=Debug, O=RB4DX, C=CA'
+          fi
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'

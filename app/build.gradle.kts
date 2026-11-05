@@ -10,20 +10,32 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.0-glibc-and-vulkan-frame"
+        versionCode = 9
+        versionName = "0.8.1-glibc-and-vulkan-frame"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // The diagnostic APK installs next to the already-working importer,
-    // preserving the user's 598 MiB of separately imported Deluxe assets.
+    // This independent test app is intentionally installed alongside the
+    // previous .bridge build. GitHub's ephemeral debug signatures cannot
+    // safely update that earlier build without a matching private key.
+    signingConfigs {
+        create("rb4dxCachedDebug") {
+            storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
+            storePassword = "android"
+            keyAlias = "rb4dx-test"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".bridge"
+            applicationIdSuffix = ".linuxvk"
             manifestPlaceholders["appLabel"] = "RB4DX Linux and Vulkan Test"
+            if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
+                signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
+            }
         }
     }
 
