@@ -76,9 +76,11 @@ int connect(int fd, const struct sockaddr *address, socklen_t length) {
     static const char success[] = "RB4DX_X11_PRIVATE_SOCKET_CONNECTED\n";
     static const char failure[] = "RB4DX_X11_PRIVATE_SOCKET_CONNECT_FAILED\n";
     if (result == 0) {
-        (void)write(STDERR_FILENO, success, sizeof(success) - 1);
+        ssize_t logged = write(STDERR_FILENO, success, sizeof(success) - 1);
+        (void)logged;
     } else {
-        (void)write(STDERR_FILENO, failure, sizeof(failure) - 1);
+        ssize_t logged = write(STDERR_FILENO, failure, sizeof(failure) - 1);
+        (void)logged;
     }
     return result;
 }
