@@ -5,6 +5,8 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Environment;
 
+import com.winlator.xenvironment.components.VortekRendererComponent;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -72,6 +74,8 @@ final class GameBootProbe {
                 "librb4dx_x11_redirect.so");
         Path socket = files.resolve("rb4dx-real-game-" + Long.toHexString(System.nanoTime())
                 + ".sock");
+        Path vortekSocket = files.resolve("rb4dx-vortek-" + Long.toHexString(System.nanoTime())
+                + ".sock");
         if (!Files.isRegularFile(gameEboot) || !Files.isReadable(gameEboot)
                 || !Files.isRegularFile(loader) || !Files.isRegularFile(emulator)
                 || !Files.isRegularFile(x11SocketBridge)
@@ -84,7 +88,6 @@ final class GameBootProbe {
                 .append("deluxe_plugin_requested=false\n")
                 .append("game_patch_loading=false\n")
                 .append("android_surface_attached=false\n")
-                .append("vulkan_proxy_attached=false\n")
                 .append("vulkan_icd_file=").append(vulkanDriverFile).append('\n');
 
         int serverFd = -1;
@@ -92,6 +95,7 @@ final class GameBootProbe {
         Process process = null;
         File capture = null;
         StandaloneX11Server x11 = null;
+        VortekRendererComponent vortek = null;
         try {
             // This is idempotent and never replaces user content. The emulator
             // needs an existing portable UserDir before its static path setup.
@@ -106,6 +110,17 @@ final class GameBootProbe {
             report.append("x11_ready=true\n")
                     .append("x11_display=").append(x11.display).append('\n')
                     .append("x11_authentication=true\n");
+
+            // The glibc Vortek client communicates with a separate Android
+            // Vulkan server using a Unix socket and shared-memory FDs. Keep
+            // the endpoint app-private and tied to this one launch session.
+            // Its swapchain still lacks Android on-screen presentation.
+            vortek = new VortekRendererComponent(context);
+            if (!vortek.start(vortekSocket.toString())) {
+                return failed(report, "Unable to start Android Vortek Vulkan transport server");
+            }
+            report.append("vortek_server_ready=true\n")
+                    .append("vortek_socket=").append(vortekSocket).append('\n');
 
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
             if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd));
@@ -134,6 +149,7 @@ final class GameBootProbe {
             builder.environment().put("VK_ICD_FILENAMES", vulkanDriverFile.toString());
             builder.environment().put("VK_LOADER_DEBUG", "error,warn,driver");
             builder.environment().put("BACHATA_VORTEK_LOG_LEVEL", "2");
+            builder.environment().put("BACHATA_VORTEK_SOCKET", vortekSocket.toString());
             // The Debian libX11/libxcb client uses /tmp/.X11-unix/Xn, whereas
             // the embedded Android server must bind inside its private TMPDIR.
             // Translate only this session's display socket at connect(2).
@@ -158,6 +174,7 @@ final class GameBootProbe {
             int exit = completed ? process.exitValue() : -1;
             String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
             String emulatorLog = tail(capture);
+            int vortekConnections = vortek.connectedClients();
 
             // These are checkpoints, not a claim that the game rendered.
             boolean accepted = !frames.contains("ERROR code=CONTENT_INVALID")
@@ -176,6 +193,8 @@ final class GameBootProbe {
                     .append("early_content_accepted=").append(accepted).append('\n')
                     .append("emulator_run_marker=").append(reachedEmulator).append('\n')
                     .append("guest_running_event=").append(reachedGuest).append('\n')
+                    .append("vortek_client_connections=").append(vortekConnections).append('\n')
+                    .append("vulkan_proxy_attached=").append(vortekConnections > 0).append('\n')
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
@@ -185,6 +204,7 @@ final class GameBootProbe {
             return failed(report, error.getClass().getSimpleName() + ": " + error.getMessage());
         } finally {
             if (process != null && process.isAlive()) process.destroyForcibly();
+            if (vortek != null) vortek.close();
             if (x11 != null) x11.close();
             if (listener != null) listener.shutdownNow();
             if (serverFd >= 0) NativeRuntimeSocket.closeServer(serverFd);

@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.11.1-vulkan-icd-diagnostic"
+        versionCode = 16
+        versionName = "0.12.0-vortek-android-transport"
         ndk {
             abiFilters.add("arm64-v8a")
         }
