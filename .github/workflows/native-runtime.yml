@@ -3,7 +3,7 @@ name: Build ARM64 emulator runtime (experimental)
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/v0130-feedback-loop-dispatch]
+    branches: [main, fix/v0130-feedback-loop-dispatch, feature/v01213-gpu-wait-trace]
     paths:
       - '.github/workflows/native-runtime.yml'
       - 'scripts/build-native-runtime.sh'
@@ -11,6 +11,7 @@ on:
       - 'native/patches/rb4dx-sanitizer-hooks.patch'
       - 'native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch'
       - 'native/patches/rb4dx_dispatch_guard.h'
+      - 'native/patches/rb4dx-gpu-wait-trace.patch'
 
 # Automatically replace a stale in-flight build when a fix is pushed.
 concurrency:
@@ -65,6 +66,15 @@ jobs:
           grep -n 'vkCmdSetAttachmentFeedbackLoopEnableEXT unavailable' \
             native-source/src/video_core/renderer_vulkan/vk_instance.cpp
 
+      - name: Instrument GPU wait entry without bypassing synchronization
+        if: github.ref_name == 'feature/v01213-gpu-wait-trace'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C native-source apply --check ../native/patches/rb4dx-gpu-wait-trace.patch
+          git -C native-source apply ../native/patches/rb4dx-gpu-wait-trace.patch
+          grep -n 'RB4DX_WAIT_BEGIN' native-source/src/video_core/amdgpu/liverpool.cpp
+
       # This cache holds only the completed ARM64 binaries. We save it BEFORE
       # the Vulkan translator / packaging steps, so later errors cannot waste
       # another full native compilation.
@@ -72,7 +82,8 @@ jobs:
         id: core_cache
         uses: actions/cache/restore@v4
         with:
-          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v4-rb4dx-sanitizer-vertex-feedback
+          # Native instrumentation changes the binary; never reuse v0.12.12's cached core.
+          key: ${{ github.ref_name == 'feature/v01213-gpu-wait-trace' && 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v5-rb4dx-gpu-wait-trace' || 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v4-rb4dx-sanitizer-vertex-feedback' }}
           path: |
             native-source/runtime/build/shadps4-arm64-stage
             native-source/runtime/build/fexcore-smoke-stage

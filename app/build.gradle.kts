@@ -10,16 +10,16 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.12.12-preview-diagnostics"
+        versionCode = 19
+        versionName = "0.12.13-gpu-wait-trace"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Keep v0.12.12 isolated from both the v0.12.10 Turnip app and the
-    // v0.12.11 frame-index probe, including their app-private data.
+    // Diagnostic v0.12.13 is separate from v0.12.10, v0.12.11 and v0.12.12.
+    // All previous apps and their app-private data remain untouched.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
@@ -30,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk.turnip.previewdiag"
-            manifestPlaceholders["appLabel"] = "RB4DX Preview Diagnostic"
+            applicationIdSuffix = ".linuxvk.turnip.gpuwaittrace"
+            manifestPlaceholders["appLabel"] = "RB4DX GPU Wait Trace"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }

@@ -1,0 +1,36 @@
+diff --git a/src/video_core/amdgpu/liverpool.cpp b/src/video_core/amdgpu/liverpool.cpp
+--- a/src/video_core/amdgpu/liverpool.cpp
++++ b/src/video_core/amdgpu/liverpool.cpp
+@@ -149,7 +149,7 @@
+             task.resume();
+             in_gfx_task.store(false, std::memory_order_relaxed);
+ #ifdef ENABLE_BACHATA_RUNTIME
+-            if (++debug_resume_count % 1'000 == 0) {
++            if (++debug_resume_count % 5'000'000 == 0) {
+                 LOG_WARNING(Render_Vulkan,
+                             "GPU coroutine active resumes={} queue={} opcode={:#x} submits={}",
+                             debug_resume_count, curr_qid, debug_last_opcode, num_submits.load());
+@@ -963,6 +963,23 @@
+                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
+                     break;
+                 }
++#ifdef ENABLE_BACHATA_RUNTIME
++                if (!wait_reg_mem->Test(regs.reg_array)) {
++                    const bool is_memory = wait_reg_mem->mem_space.Value() ==
++                                           PM4CmdWaitRegMem::MemSpace::Memory;
++                    const u32 current_value = is_memory ? *wait_reg_mem->Address<const u32*>()
++                                                        : regs.reg_array[wait_reg_mem->Reg()];
++                    LOG_WARNING(Render_Vulkan,
++                                "RB4DX_WAIT_BEGIN queue=gfx addr={:#x} value={:#x} "
++                                "ref={:#x} mask={:#x} function={} vo_label={} submits={}",
++                                is_memory ? reinterpret_cast<uintptr_t>(
++                                                wait_reg_mem->Address<const u32*>())
++                                          : wait_reg_mem->Reg(),
++                                current_value, wait_reg_mem->ref, wait_reg_mem->mask,
++                                static_cast<u32>(wait_reg_mem->function.Value()),
++                                vo_port->IsVoLabel(wait_addr), num_submits.load());
++                }
++#endif
+                 u64 wait_iterations = 0;
+                 while (!wait_reg_mem->Test(regs.reg_array)) {
+ #ifdef ENABLE_BACHATA_RUNTIME

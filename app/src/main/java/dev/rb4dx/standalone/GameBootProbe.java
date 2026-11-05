@@ -224,6 +224,7 @@ final class GameBootProbe {
             String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
             String emulatorLog = tail(capture);
             String crashDiagnostics = crashDiagnostics(capture);
+            String gpuWaitDiagnostics = GpuWaitSummary.fromLog(capture.toPath());
             int vortekConnections = vortek.connectedClients();
             int vortekContexts = vortek.createdContexts();
             int vortekHandshakesOk = vortek.handshakesOk();
@@ -263,6 +264,7 @@ final class GameBootProbe {
                     .append("crash_register_capture_enabled=true\n")
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append(NativeCrashSummary.fromText(crashDiagnostics))
+                    .append(gpuWaitDiagnostics)
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nCRASH_DIAGNOSTICS:\n").append(crashDiagnostics)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
