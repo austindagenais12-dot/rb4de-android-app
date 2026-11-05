@@ -1,4 +1,4 @@
-name: Build Android native storage access APK
+name: Build Android Linux storage and Vulkan frame APK
 
 on:
   workflow_dispatch:
@@ -84,6 +84,20 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_host_loader.so |
             grep -Eq 'Machine:.*AArch64'
 
+      - name: Compile read-only Linux ARM64 glibc game probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gcc-aarch64-linux-gnu
+          fi
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -fPIE -pie \
+            native/glibc_file_probe.c \
+            -o app/src/main/jniLibs/arm64-v8a/librb4dx_glibc_fileprobe.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_glibc_fileprobe.so |
+            grep -Eq 'Machine:.*AArch64'
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -105,5 +119,5 @@ jobs:
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-direct-native-storage-debug
+          name: rb4dx-glibc-vulkan-frame-debug
           path: app/build/outputs/apk/debug/*.apk

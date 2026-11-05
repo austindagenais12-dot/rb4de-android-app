@@ -1,7 +1,7 @@
 # RB4DX Standalone for Android
 
-**Status: experimental launch-readiness tests (SAF, optional direct shared-storage
-access, native control channel, Vulkan SurfaceView), not a playable emulator yet.**
+**Status: experimental Linux glibc game-file access and Vulkan frame presentation
+tests, not a playable emulator yet.**
 
 This is an independent, single-game Android project for running a legally owned
 PS4 copy of **Rock Band 4 (update 2.21)** with **Rock Band 4 Deluxe**. It does
@@ -52,11 +52,20 @@ It does not modify or share storage with Bachata S4.
   any time. This does **not** bypass Android's protected `Android/data` folders
   or copy the game. The native diagnostic only runs when permission is granted
   and a user-selected game folder can be mapped to primary shared storage.
+* **Linux glibc game-file check** runs a tiny AArch64 Linux program through
+  the packaged glibc dynamic loader, from the same host runtime as shadPS4.
+  It uses only `open`, `fstat` and a 16-byte `pread` of the existing `eboot.bin`,
+  then exits. This verifies Linux-process path access beyond the previous
+  Android Bionic/JNI check. It does **not** load or execute PS4 game code.
 * **Test Vulkan surface and GPU** uses a real Android `SurfaceView`, converts it
   into an `ANativeWindow`, creates a Vulkan `VkSurfaceKHR`, and checks for a
   present-capable graphics queue, surface formats and swapchain support. It
   does not render the PS4 game yet, and it does not prove the Linux emulator
   can use the Android Vulkan surface.
+* **Render one blue Vulkan test frame** creates a real swapchain, records a
+  GPU clear command, and submits/presents one frame to the Android SurfaceView.
+  This is an independent Android renderer milestone, **not** shadPS4 graphics.
+  The Linux emulator still needs to hand off its output to that display.
 
 The original RB4DX desktop directions also mention placing the plugin in
 `sce_module`; that is *not* enough on Android, and this app uses the open-source
@@ -113,7 +122,7 @@ run may occasionally need to rebuild. The successful core is also attached to
 the run as a diagnostic artifact retained for seven days.
 
 The Android control-channel bridge has a working on-device JNI socket test;
-game-content access and Android GPU presentation now have standalone probes.
+direct game access and Android GPU presentation now have separate probes.
 **Emulator Vulkan surface transport and native game-directory mounts remain
 unimplemented.** See BACKEND_PLAN.md for remaining work.
 Native shadPS4 compilation and Linux runtime packaging have succeeded in

@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7.0-direct-native-game-access"
+        versionCode = 8
+        versionName = "0.8.0-glibc-and-vulkan-frame"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -23,7 +23,7 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".bridge"
-            manifestPlaceholders["appLabel"] = "RB4DX Native Storage Test"
+            manifestPlaceholders["appLabel"] = "RB4DX Linux and Vulkan Test"
         }
     }
 
@@ -33,6 +33,7 @@ android {
             // not allow executing binaries from writable app-data storage.
             useLegacyPackaging = true
             keepDebugSymbols.add("**/librb4dx_host_loader.so")
+            keepDebugSymbols.add("**/librb4dx_glibc_fileprobe.so")
         }
     }
 

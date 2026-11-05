@@ -98,6 +98,23 @@ modifying/copying the game. If this passes, Linux shadPS4 still needs a direct
 game-boot probe; the Android-native test does not establish Linux glibc access,
 shader rendering or Deluxe plugin initialization.
 
+## Linux glibc file access and actual Vulkan frame
+
+The next APK builds an isolated AArch64 GNU/Linux program with the cross-GCC
+toolchain and packages it as an executable ELF (under the Android native-library
+directory). The app starts it with the same verified glibc loader, library
+directory and rseq workaround used by the real `shadps4-arm64-fex` process.
+It reads the existing game `eboot.bin` header with `open`/`fstat`/`pread`,
+then quits without booting PS4 code. A pass proves the Linux glibc process
+can access the user-selected raw path; it does not establish shadPS4 ELF/SELF
+validation, a launchable guest, or Deluxe plugin support.
+
+Separately, the Android side can create a Vulkan swapchain for its live
+`SurfaceView`, acquire an image, record a GPU clear-to-blue command, and submit
+and present that frame. A successful test establishes actual Android-side GPU
+presentation. It does **not** attach the Linux/Vortek renderer to the Android
+surface, which remains an architectural task.
+
 ## Minimum backend contract
 
 ```text

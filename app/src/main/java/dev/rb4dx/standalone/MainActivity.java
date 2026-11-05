@@ -57,6 +57,8 @@ public final class MainActivity extends Activity {
     private TextView vulkanStatus;
     private TextView allFilesAccessStatus;
     private TextView nativeFileStatus;
+    private TextView glibcFileStatus;
+    private TextView vulkanFrameStatus;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
@@ -68,6 +70,10 @@ public final class MainActivity extends Activity {
     private Button copyVulkanButton;
     private Button nativeFileButton;
     private Button copyNativeFileButton;
+    private Button glibcFileButton;
+    private Button copyGlibcFileButton;
+    private Button vulkanFrameButton;
+    private Button copyVulkanFrameButton;
     private SurfaceView vulkanSurface;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
@@ -75,11 +81,15 @@ public final class MainActivity extends Activity {
     private String lastGamePreflightReport;
     private String lastVulkanReport;
     private String lastNativeFileReport;
+    private String lastGlibcFileReport;
+    private String lastVulkanFrameReport;
     private boolean smokeRunning;
     private boolean bridgeRunning;
     private boolean gamePreflightRunning;
     private boolean vulkanRunning;
     private boolean nativeFileRunning;
+    private boolean glibcFileRunning;
+    private boolean vulkanFrameRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -160,6 +170,19 @@ public final class MainActivity extends Activity {
         copyNativeFileButton = button(body, "Copy native file-access report");
         copyNativeFileButton.setEnabled(false);
         copyNativeFileButton.setOnClickListener(v -> copyReport("RB4DX direct native storage", lastNativeFileReport));
+        addText(body, "Linux glibc game-file check", 18, FG, true);
+        addText(body,
+                "Uses the very same Linux ARM64 glibc dynamic loader as shadPS4 to open "
+                        + "your existing eboot.bin. Reads 16 bytes and exits without launching the game.",
+                14, MUTED, false);
+        glibcFileStatus = addText(body, "Waiting for permission, a game folder and native runtime…",
+                13, MUTED, false);
+        glibcFileButton = button(body, "Verify game access through Linux glibc");
+        glibcFileButton.setEnabled(false);
+        glibcFileButton.setOnClickListener(v -> runGlibcFileProbe());
+        copyGlibcFileButton = button(body, "Copy Linux game-file report");
+        copyGlibcFileButton.setEnabled(false);
+        copyGlibcFileButton.setOnClickListener(v -> copyReport("RB4DX Linux glibc game-file", lastGlibcFileReport));
         addGap(body, 22);
 
         addText(body, "5. Import Rock Band 4 Deluxe", 19, FG, true);
@@ -221,11 +244,25 @@ public final class MainActivity extends Activity {
         copyVulkanButton = button(body, "Copy Vulkan report");
         copyVulkanButton.setEnabled(false);
         copyVulkanButton.setOnClickListener(v -> copyVulkanReport());
+        addText(body, "GPU frame presentation test", 18, FG, true);
+        addText(body,
+                "Creates a Vulkan swapchain, clears a GPU image blue and presents it to the "
+                        + "rectangle above. This tests a real displayed GPU frame, not PS4 graphics.",
+                14, MUTED, false);
+        vulkanFrameStatus = addText(body, "Waiting for the Android display surface…",
+                13, MUTED, false);
+        vulkanFrameButton = button(body, "Render one blue Vulkan test frame");
+        vulkanFrameButton.setEnabled(false);
+        vulkanFrameButton.setOnClickListener(v -> runVulkanFrameProbe());
+        copyVulkanFrameButton = button(body, "Copy Vulkan frame report");
+        copyVulkanFrameButton.setEnabled(false);
+        copyVulkanFrameButton.setOnClickListener(v -> copyReport("RB4DX Vulkan frame", lastVulkanFrameReport));
         vulkanSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
                 vulkanStatus.setText("Android display surface ready for Vulkan testing.");
                 if (!vulkanRunning) vulkanButton.setEnabled(true);
+                if (!vulkanFrameRunning) vulkanFrameButton.setEnabled(true);
             }
 
             @Override
@@ -234,7 +271,9 @@ public final class MainActivity extends Activity {
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
                 vulkanButton.setEnabled(false);
+                vulkanFrameButton.setEnabled(false);
                 vulkanStatus.setText("Android display surface not currently available.");
+                vulkanFrameStatus.setText("Android display surface not currently available.");
             }
         });
         addGap(body, 22);
@@ -284,6 +323,10 @@ public final class MainActivity extends Activity {
                 : "All files access: NOT GRANTED (tap settings and enable it if comfortable)");
         String selected = preferences.getString(GAME_URI, null);
         nativeFileButton.setEnabled(granted && selected != null && !nativeFileRunning);
+        if (glibcFileButton != null) {
+            glibcFileButton.setEnabled(granted && selected != null
+                    && preparedRuntimeDirectory != null && !glibcFileRunning);
+        }
         if (!granted) {
             nativeFileStatus.setText("Waiting for optional All files access permission.");
         } else if (selected == null) {
@@ -327,6 +370,34 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void runGlibcFileProbe() {
+        if (glibcFileRunning || preparedRuntimeDirectory == null
+                || !Environment.isExternalStorageManager()) return;
+        String saved = preferences.getString(GAME_URI, null);
+        if (saved == null) return;
+        String folder = GamePreflight.rawPrimaryPath(Uri.parse(saved));
+        if (folder == null) {
+            glibcFileStatus.setText("Selected folder cannot be mapped to primary shared storage.");
+            return;
+        }
+        glibcFileRunning = true;
+        glibcFileButton.setEnabled(false);
+        glibcFileStatus.setText("Launching Linux ARM64 glibc file-read probe (up to 12 seconds)…");
+        Path runtime = preparedRuntimeDirectory;
+        Path eboot = Path.of(folder, "eboot.bin");
+        runtimeWorker.submit(() -> {
+            GlibcGameProbe.Result result = GlibcGameProbe.inspect(this, runtime, eboot);
+            runOnUiThread(() -> {
+                glibcFileRunning = false;
+                lastGlibcFileReport = result.report;
+                copyGlibcFileButton.setEnabled(true);
+                glibcFileButton.setEnabled(Environment.isExternalStorageManager());
+                glibcFileStatus.setText(result.report.substring(0,
+                        Math.min(1800, result.report.length())));
+            });
+        });
+    }
+
     private void prepareNativeRuntime() {
         runtimeWorker.submit(() -> {
             try {
@@ -349,12 +420,14 @@ public final class MainActivity extends Activity {
                     probeButton.setEnabled(true);
                     bridgeStatus.setText("Ready for the native control-channel test.");
                     bridgeButton.setEnabled(true);
+                    refreshNativeAccessStatus();
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     runtimeStatus.setText("Native runtime not ready: " + error.getMessage());
                     probeStatus.setText("Cannot run the test until the runtime is ready.");
                     bridgeStatus.setText("Cannot run the test until the runtime is ready.");
+                    glibcFileStatus.setText("Linux game-file test requires the verified runtime.");
                 });
             }
         });
@@ -440,10 +513,11 @@ public final class MainActivity extends Activity {
     }
 
     private void runVulkanProbe() {
-        if (vulkanRunning || vulkanSurface == null
+        if (vulkanRunning || vulkanFrameRunning || vulkanSurface == null
                 || !vulkanSurface.getHolder().getSurface().isValid()) return;
         vulkanRunning = true;
         vulkanButton.setEnabled(false);
+        vulkanFrameButton.setEnabled(false);
         vulkanStatus.setText("Querying Android Vulkan GPU and display surface…");
         android.view.Surface surface = vulkanSurface.getHolder().getSurface();
         runtimeWorker.submit(() -> {
@@ -458,6 +532,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 vulkanRunning = false;
                 vulkanButton.setEnabled(vulkanSurface.getHolder().getSurface().isValid());
+                vulkanFrameButton.setEnabled(vulkanSurface.getHolder().getSurface().isValid());
                 lastVulkanReport = finalReport;
                 copyVulkanButton.setEnabled(true);
                 vulkanStatus.setText(finalReport.substring(0,
@@ -468,6 +543,36 @@ public final class MainActivity extends Activity {
 
     private void copyVulkanReport() {
         copyReport("RB4DX Vulkan surface", lastVulkanReport);
+    }
+
+    private void runVulkanFrameProbe() {
+        if (vulkanFrameRunning || vulkanRunning || vulkanSurface == null
+                || !vulkanSurface.getHolder().getSurface().isValid()) return;
+        vulkanFrameRunning = true;
+        vulkanButton.setEnabled(false);
+        vulkanFrameButton.setEnabled(false);
+        vulkanFrameStatus.setText("Creating Vulkan swapchain and presenting one blue GPU frame…");
+        android.view.Surface surface = vulkanSurface.getHolder().getSurface();
+        runtimeWorker.submit(() -> {
+            String report;
+            try {
+                report = NativeVulkanFrameProbe.presentFrame(surface);
+            } catch (Throwable error) {
+                report = "RB4DX_VULKAN_FRAME_FAILED\n"
+                        + error.getClass().getSimpleName() + ": " + error.getMessage();
+            }
+            String finalReport = report;
+            runOnUiThread(() -> {
+                vulkanFrameRunning = false;
+                boolean available = vulkanSurface.getHolder().getSurface().isValid();
+                vulkanButton.setEnabled(available);
+                vulkanFrameButton.setEnabled(available);
+                lastVulkanFrameReport = finalReport;
+                copyVulkanFrameButton.setEnabled(true);
+                vulkanFrameStatus.setText(finalReport.substring(0,
+                        Math.min(1800, finalReport.length())));
+            });
+        });
     }
 
     private void copyReport(String label, String report) {
