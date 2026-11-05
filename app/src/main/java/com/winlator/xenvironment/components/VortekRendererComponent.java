@@ -235,15 +235,17 @@ public final class VortekRendererComponent implements AutoCloseable {
             heartbeat.recordFailed("SURFACE_HOLDER_MISSING");
             return;
         }
-        Surface surface = previewHolder.getSurface();
-        if (surface == null || !surface.isValid()) {
-            heartbeat.recordFailed("SURFACE_INVALID");
-            return;
-        }
         Canvas canvas = null;
         String error = null;
         try {
-            canvas = surface.lockHardwareCanvas();
+            Surface surface = previewHolder.getSurface();
+            if (surface == null || !surface.isValid()) {
+                heartbeat.recordFailed("SURFACE_INVALID");
+                return;
+            }
+            // SurfaceHolder serializes locking with the SurfaceView lifecycle.
+            // Direct Surface.lockHardwareCanvas() can race surfaceDestroyed().
+            canvas = previewHolder.lockHardwareCanvas();
             if (canvas == null) {
                 error = "CANVAS_UNAVAILABLE";
             } else {
@@ -264,7 +266,7 @@ public final class VortekRendererComponent implements AutoCloseable {
         } finally {
             if (canvas != null) {
                 try {
-                    surface.unlockCanvasAndPost(canvas);
+                    previewHolder.unlockCanvasAndPost(canvas);
                 } catch (RuntimeException exception) {
                     if (error == null) error = "POST_" + exception.getClass().getSimpleName();
                 }

@@ -12,8 +12,10 @@ assert "renderLiveHeartbeat()" in callback
 assert "getLastPresentedNativeHardwareBuffer()" not in callback
 assert "Bitmap.wrapHardwareBuffer" not in callback
 assert "private void renderLiveHeartbeat()" in component
-assert "surface.lockHardwareCanvas()" in component
-assert "surface.unlockCanvasAndPost(canvas)" in component
+heartbeat_draw = component.split("private void renderLiveHeartbeat()", 1)[1].split("private native", 1)[0]
+assert "previewHolder.lockHardwareCanvas()" in heartbeat_draw
+assert "previewHolder.unlockCanvasAndPost(canvas)" in heartbeat_draw
+assert "surface.lockHardwareCanvas()" not in heartbeat_draw
 assert "heartbeat.tryBegin(" in component
 assert "heartbeat.recordFailed(" in component
 assert "heartbeat.recordPosted()" in component

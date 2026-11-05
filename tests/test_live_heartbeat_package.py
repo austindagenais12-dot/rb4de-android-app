@@ -12,6 +12,8 @@ assert 'applicationIdSuffix = ".linuxvk.turnip.liveheartbeat"' in gradle
 assert 'manifestPlaceholders["appLabel"] = "RB4DX Live Display Test"' in gradle
 assert 'feature/v01214-live-surface-heartbeat' in android
 assert 'branch=feature/v01213-gpu-wait-trace' in android
+assert 'run_id="42119601182"' in android
+assert '"$native_sha" != "18bbb0bc0c914f86816513cf4d10b99178984524"' in android
 assert '"$native_branch" != "feature/v01213-gpu-wait-trace"' in android
 assert "dev.rb4dx.standalone.linuxvk.turnip.liveheartbeat" in android
 assert "rb4dx-live-heartbeat-debug" in android

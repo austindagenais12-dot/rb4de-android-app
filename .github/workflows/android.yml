@@ -46,9 +46,10 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
-          elif [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" || \
-                  "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" ]]; then
-            # v0.12.14 changes Android Java only; reuse v0.12.13's trace-enabled core.
+          elif [[ "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" ]]; then
+            # Use the exact already-verified v0.12.13 runtime, not a mutable latest-success.
+            run_id="42119601182"
+          elif [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" ]]; then
             run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=feature/v01213-gpu-wait-trace&per_page=1" --jq '.workflow_runs[0].id')"
           elif [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" || \
                   "$GITHUB_REF_NAME" == "feature/v0131-live-frame-queue" || \
@@ -68,6 +69,15 @@ jobs:
                 "$native_branch" != "feature/v01213-gpu-wait-trace" ]]; then
             echo "Refusing non-diagnostic native runtime: $native_branch" >&2
             exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" ]]; then
+            native_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
+            native_conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
+            if [[ "$native_sha" != "18bbb0bc0c914f86816513cf4d10b99178984524" || \
+                  "$native_conclusion" != "success" ]]; then
+              echo "Refusing altered or unsuccessful v0.12.13 runtime $run_id" >&2
+              exit 1
+            fi
           fi
           if [[ ( "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" || \
                   "$GITHUB_REF_NAME" == "feature/v0131-live-frame-queue" || \
