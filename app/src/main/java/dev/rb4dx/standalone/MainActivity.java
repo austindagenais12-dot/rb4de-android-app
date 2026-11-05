@@ -244,19 +244,19 @@ public final class MainActivity extends Activity {
         addText(body, "8. Android Vulkan display bridge", 19, FG, true);
         addText(body, "Vortek graphics driver", 18, FG, true);
         addText(body,
-                "The system Adreno driver is the default. The APK also bundles a pinned ARM64 "
-                        + "Mesa Turnip driver to test the real-game Vortek graphics backend. "
+                "Mesa Turnip is the default for this diagnostic app, based on the earlier "
+                        + "System Adreno Vortek crash. The APK bundles a pinned ARM64 Turnip driver. "
                         + "Changing the selection does not replace your phone's system driver. "
                         + "The blue Vulkan surface tests still use system Adreno.",
                 14, MUTED, false);
         turnipStatus = addText(body, "Checking bundled Turnip driver…", 13, MUTED, false);
         gpuDrivers = new RadioGroup(this);
         gpuDrivers.setOrientation(RadioGroup.VERTICAL);
-        systemGpuRadio = radio("System Adreno (default)");
-        turnipGpuRadio = radio("Mesa Turnip (Vortek game test)");
+        systemGpuRadio = radio("System Adreno (optional)");
+        turnipGpuRadio = radio("Mesa Turnip (default for game test)");
         gpuDrivers.addView(systemGpuRadio);
         gpuDrivers.addView(turnipGpuRadio);
-        gpuDrivers.check(preferences.getBoolean(GPU_TURNIP_ENABLED, false)
+        gpuDrivers.check(preferences.getBoolean(GPU_TURNIP_ENABLED, true)
                 ? turnipGpuRadio.getId() : systemGpuRadio.getId());
         gpuDrivers.setOnCheckedChangeListener((group, id) -> {
             boolean turnip = id == turnipGpuRadio.getId();
@@ -770,7 +770,7 @@ public final class MainActivity extends Activity {
         if (!turnipDriverExists()) {
             turnipStatus.setText("Bundled ARM64 Turnip library missing. Use system Adreno.");
         } else {
-            boolean enabled = preferences.getBoolean(GPU_TURNIP_ENABLED, false);
+            boolean enabled = preferences.getBoolean(GPU_TURNIP_ENABLED, true);
             turnipStatus.setText((enabled ? "Selected: Mesa Turnip" : "Selected: System Adreno")
                     + " | Bundled ARM64 Turnip library ready");
         }

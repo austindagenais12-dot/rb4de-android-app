@@ -10,6 +10,8 @@ sources=(
   "$project_dir/tests/StartupLogStoreTest.java"
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/NativeCrashSummary.java"
   "$project_dir/tests/NativeCrashSummaryTest.java"
+  "$project_dir/app/src/main/java/com/winlator/xenvironment/components/FramePreviewTrace.java"
+  "$project_dir/tests/FramePreviewTraceTest.java"
 )
 if command -v javac >/dev/null 2>&1; then
   javac -d "$build_dir" "${sources[@]}"
@@ -19,6 +21,7 @@ fi
 java -cp "$build_dir" InstallerSmokeTest
 java -cp "$build_dir" dev.rb4dx.standalone.StartupLogStoreTest
 java -cp "$build_dir" dev.rb4dx.standalone.NativeCrashSummaryTest
+java -cp "$build_dir" com.winlator.xenvironment.components.FramePreviewTraceTest
 c++ -std=c++20 -Wall -Wextra -Werror \
   -I "$project_dir/native/patches" \
   "$project_dir/tests/VulkanDispatchGuardTest.cpp" \
@@ -38,3 +41,4 @@ cc -std=c11 -Wall -Wextra -Werror \
   -o "$build_dir/VortekWindowImagesTest"
 "$build_dir/VortekWindowImagesTest"
 python3 "$project_dir/tests/test_runtime_verifier.py"
+python3 "$project_dir/tests/test_preview_diagnostic_package.py"

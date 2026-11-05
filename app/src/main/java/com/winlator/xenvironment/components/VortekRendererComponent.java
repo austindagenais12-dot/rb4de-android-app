@@ -32,6 +32,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     private final SurfaceHolder previewHolder;
     private final AtomicInteger lastUpdatedWindow = new AtomicInteger(Integer.MIN_VALUE);
     private final AtomicInteger windowUpdates = new AtomicInteger();
+    private volatile FramePreviewTrace lastPreviewTrace = new FramePreviewTrace();
     private long serverPtr;
 
     static {
@@ -67,44 +68,90 @@ public final class VortekRendererComponent implements AutoCloseable {
 
     public int windowUpdateCount() { return windowUpdates.get(); }
 
+    public String previewDiagnosticReport() { return lastPreviewTrace.report(); }
+
     /**
      * Diagnostic only. The producer must be stopped before hardware buffers
      * are sampled by Android's canvas: sampling while Vulkan is writing into
      * the same shared buffer would be undefined behavior.
      */
     public synchronized boolean stopAndRenderFinalFrame() {
+        FramePreviewTrace trace = new FramePreviewTrace();
+        lastPreviewTrace = trace;
+        trace.begin("SERVER_STOP");
         if (serverPtr != 0) {
             stopNativeServer(serverPtr);
             serverPtr = 0;
         }
-        if (previewHolder == null || lastUpdatedWindow.get() == Integer.MIN_VALUE) {
+        trace.completed("SERVER_STOP");
+        trace.begin("WINDOW_UPDATE");
+        if (previewHolder == null) {
+            trace.fail("SURFACE_HOLDER_MISSING", null);
             return false;
         }
+        if (lastUpdatedWindow.get() == Integer.MIN_VALUE) {
+            trace.fail("NO_WINDOW_UPDATE", null);
+            return false;
+        }
+        trace.completed("WINDOW_UPDATE");
+        trace.begin("SURFACE_VALIDATION");
         Surface surface = previewHolder.getSurface();
-        if (surface == null || !surface.isValid()) return false;
+        if (surface == null || !surface.isValid()) {
+            trace.fail("SURFACE_INVALID", null);
+            return false;
+        }
+        trace.completed("SURFACE_VALIDATION");
 
+        trace.begin("HARDWARE_BUFFER");
         HardwareBuffer buffer = getLastPresentedNativeHardwareBuffer();
-        if (buffer == null) return false;
+        if (buffer == null) {
+            trace.fail("BUFFER_UNAVAILABLE", null);
+            return false;
+        }
+        trace.completed("HARDWARE_BUFFER");
         Bitmap bitmap = null;
         try {
+            trace.begin("BITMAP_WRAP");
             bitmap = Bitmap.wrapHardwareBuffer(buffer, null);
-            if (bitmap == null) return false;
+            if (bitmap == null) {
+                trace.fail("BITMAP_UNAVAILABLE", null);
+                return false;
+            }
+            trace.completed("BITMAP_WRAP");
+            trace.begin("CANVAS_LOCK");
             Canvas canvas = surface.lockHardwareCanvas();
+            trace.completed("CANVAS_LOCK");
             try {
+                trace.begin("CANVAS_DRAW");
                 canvas.drawColor(Color.BLACK);
                 Rect bounds = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
                 Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
                 canvas.drawBitmap(bitmap, null, bounds, paint);
+                trace.completed("CANVAS_DRAW");
+            } catch (RuntimeException exception) {
+                trace.fail("CANVAS_DRAW_EXCEPTION", exception);
+                throw exception;
             } finally {
-                surface.unlockCanvasAndPost(canvas);
+                trace.begin("CANVAS_POST");
+                try {
+                    surface.unlockCanvasAndPost(canvas);
+                    trace.completed("CANVAS_POST");
+                } catch (RuntimeException exception) {
+                    trace.fail("CANVAS_POST_EXCEPTION", exception);
+                    throw exception;
+                }
             }
+            trace.begin("RETAIN_PREVIEW");
             synchronized (VortekRendererComponent.class) {
                 if (retainedPreview != null) retainedPreview.recycle();
                 retainedPreview = bitmap;
                 bitmap = null;
             }
+            trace.completed("RETAIN_PREVIEW");
+            trace.posted();
             return true;
         } catch (RuntimeException exception) {
+            trace.fail("EXCEPTION_AT_" + trace.lastAttempted(), exception);
             return false;
         } finally {
             if (bitmap != null) bitmap.recycle();

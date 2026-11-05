@@ -113,7 +113,7 @@ final class GameBootProbe {
         // This selects the Android driver behind Vortek. The glibc shadPS4
         // process must still use its pinned, app-private Vortek client ICD.
         SharedPreferences gpuPreferences = context.getSharedPreferences("rb4dx", Context.MODE_PRIVATE);
-        boolean useTurnip = gpuPreferences.getBoolean("gpu_turnip_enabled", false);
+        boolean useTurnip = gpuPreferences.getBoolean("gpu_turnip_enabled", true);
         Path turnipLibrary = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "libvulkan_freedreno.so");
         if (useTurnip && !Files.isRegularFile(turnipLibrary)) {
@@ -259,6 +259,7 @@ final class GameBootProbe {
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
                     .append("android_surface_attached=false\n")
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
+                    .append(vortek.previewDiagnosticReport())
                     .append("crash_register_capture_enabled=true\n")
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append(NativeCrashSummary.fromText(crashDiagnostics))

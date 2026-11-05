@@ -10,16 +10,16 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.12.11-frame-index-probe"
+        versionCode = 18
+        versionName = "0.12.12-preview-diagnostics"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Keep the v0.12.11 frame-index probe isolated from the working v0.12.10
-    // Turnip app (dev.rb4dx.standalone.linuxvk.turnip), including private data.
+    // Keep v0.12.12 isolated from both the v0.12.10 Turnip app and the
+    // v0.12.11 frame-index probe, including their app-private data.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
@@ -30,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk.turnip.frameprobe"
-            manifestPlaceholders["appLabel"] = "RB4DX Frame Probe"
+            applicationIdSuffix = ".linuxvk.turnip.previewdiag"
+            manifestPlaceholders["appLabel"] = "RB4DX Preview Diagnostic"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }
