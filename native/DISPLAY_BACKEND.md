@@ -23,12 +23,16 @@ It is a fork of Termux:X11 with an explicit native embedding contract.
 
 This workflow deliberately runs **separately** from the working shadPS4/FEX
 runtime, so failed window-integration work cannot overwrite or needlessly
-recompile the game emulator. It publishes a native build/smoke binary and API
-headers for further integration, not an APK or a game-boot claim.
+recompile the game emulator. It publishes the native engine smoke host, an
+Android ARM64 `rb4dx-x11-server` process executable, license and API header.
+The server prints `RB4DX_X11_READY` only after its Xorg socket is ready.
+Packaging, app-process lifecycle, authorization and Android rendering still
+require separate integration. This artifact is not an APK or a game-boot claim.
 
 ## Remaining engineering, in dependency order
 
-1. Integrate the X11 engine as an isolated Android component/service with a
+1. Package the X11 service executable in an Android-executable location;
+   integrate it as an isolated Android component/service with a
    private, authenticated Unix-domain display socket and deterministic startup
    and shutdown. Display socket permissions must restrict access to this app.
 2. Supply the native display renderer and attach/detach its `ANativeWindow`

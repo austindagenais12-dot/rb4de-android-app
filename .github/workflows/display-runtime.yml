@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/display-runtime.yml'
       - 'scripts/build-rb4dx-x11.sh'
+      - 'native/x11/**'
 
 permissions:
   contents: read
@@ -43,7 +44,7 @@ jobs:
           path: |
             native-x11-source
             native-x11-output/build
-          key: rb4dx-magicdesk-x11-702b1736-android34-v1
+          key: rb4dx-magicdesk-x11-702b1736-android34-v2-standalone-server
 
       - name: Checkout independent embedded X11 engine
         shell: bash

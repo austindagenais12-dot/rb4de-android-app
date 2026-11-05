@@ -20,28 +20,34 @@ if [[ ! -f "$source_root/lorie/src/main/cpp/lorie/embedded.h" ]]; then
 fi
 
 : "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to the installed Android NDK path}"
-cmake -S "$source_root/lorie/src/main/cpp" \
+source_root="$(realpath "$source_root")"
+output_root="$(realpath -m "$output_root")"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cmake -S "$script_root/native/x11" \
   -B "$output_root/build" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+  -DRB4DX_X11_SOURCE="$source_root" \
   -DANDROID_ABI=arm64-v8a \
   -DANDROID_PLATFORM=android-34 \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DLORIE_BUILD_SMOKE=ON
 
-cmake --build "$output_root/build" --target lorie-smoke --parallel 4
+cmake --build "$output_root/build" --target lorie-smoke rb4dx-x11-server --parallel 4
 
-smoke="$output_root/build/lorie-smoke"
-if [[ ! -s "$smoke" ]]; then
-  echo 'Native ARM64 X11 smoke binary is missing' >&2
-  exit 1
-fi
-if ! readelf -h "$smoke" | grep -Eq 'Machine:.*AArch64'; then
-  echo 'Unexpected X11 smoke binary architecture' >&2
-  exit 1
-fi
+for binary_path in "$output_root/build/engine/lorie-smoke" "$output_root/build/rb4dx-x11-server"; do
+  if [[ ! -s "$binary_path" ]]; then
+    echo "Native ARM64 X11 binary missing: $binary_path" >&2
+    exit 1
+  fi
+  if ! readelf -h "$binary_path" | grep -Eq 'Machine:.*AArch64'; then
+    echo "Unexpected X11 binary architecture: $binary_path" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$output_root/stage"
-cp "$smoke" "$output_root/stage/lorie-smoke-arm64"
+cp "$output_root/build/engine/lorie-smoke" "$output_root/stage/lorie-smoke-arm64"
+cp "$output_root/build/rb4dx-x11-server" "$output_root/stage/rb4dx-x11-server-arm64"
 cp "$source_root/LICENSE" "$output_root/stage/X11-LICENSE-GPL3.txt"
 cp "$source_root/lorie/src/main/cpp/lorie/embedded.h" "$output_root/stage/embedded.h"
 printf 'upstream=https://github.com/mekhontsev/magicdesk-x11\nrevision=%s\narch=arm64-v8a\nandroid_api=34\nstatus=compile_only_no_android_surface\n' \
