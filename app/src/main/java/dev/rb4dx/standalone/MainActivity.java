@@ -114,10 +114,10 @@ public final class MainActivity extends Activity {
                 14, MUTED, false);
         addGap(body, 12);
         addText(body, "Native execution diagnostic", 18, FG, true);
-        addText(body, "Runs a real FEXCore CPU smoke test. This is not a Rock Band 4 launch.",
+        addText(body, "Runs loader startup, a restricted-syscall workaround, and FEXCore CPU tests. No game files or mod import required.",
                 14, MUTED, false);
         probeStatus = addText(body, "Preparing emulator files…", 13, MUTED, false);
-        probeButton = button(body, "Test ARM64 CPU execution");
+        probeButton = button(body, "Run full ARM64 diagnostics");
         probeButton.setEnabled(false);
         probeButton.setOnClickListener(v -> runSmokeTest());
         copyProbeButton = button(body, "Copy diagnostic report");
@@ -175,7 +175,7 @@ public final class MainActivity extends Activity {
         if (preparedRuntimeDirectory == null || smokeRunning) return;
         smokeRunning = true;
         probeButton.setEnabled(false);
-        probeStatus.setText("Running ARM64 FEXCore smoke test (up to 20 seconds)…");
+        probeStatus.setText("Testing Linux loader and FEXCore (up to 50 seconds)…");
         Path runtimeDirectory = preparedRuntimeDirectory;
         runtimeWorker.submit(() -> {
             Arm64SmokeRunner.Result result = Arm64SmokeRunner.run(this, runtimeDirectory);

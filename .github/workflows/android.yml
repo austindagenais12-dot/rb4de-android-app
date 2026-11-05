@@ -1,4 +1,4 @@
-name: Build Android ARM64 runtime probe APK
+name: Build Android ARM64 loader diagnostic APK
 
 on:
   workflow_dispatch:
@@ -98,5 +98,5 @@ jobs:
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-fex-smoke-probe-debug
+          name: rb4dx-loader-diagnostics-debug
           path: app/build/outputs/apk/debug/*.apk

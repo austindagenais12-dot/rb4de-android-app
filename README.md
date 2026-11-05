@@ -24,11 +24,13 @@ It does not modify or share storage with Bachata S4.
   app's private storage on first launch, verifying every file's SHA-256 against
   the build manifest. This works without Shizuku or root. It does not launch
   the Linux emulator yet.
-* The Android debug APK runs under a separate diagnostic package ID
-  (dev.rb4dx.standalone.probe) so it does not overwrite the previous importer
-  or erase the owner's imported Deluxe assets. It adds a manual FEXCore CPU
-  process smoke test and a Copy Diagnostic Report button. No game data or
-  Deluxe import is needed for this CPU test.
+* The newer Android diagnostic APK uses the separate package ID
+  (dev.rb4dx.standalone.probe2) so it does not overwrite the previous importer
+  or the initial probe, preserving already imported Deluxe assets. A single
+  button compares plain glibc loader startup, loader startup with restartable
+  sequences disabled, FEXCore CPU execution, and linker startup tracing if
+  needed. The full diagnostic report can be copied in one tap. No game data
+  or Deluxe import is needed for these tests.
 
 The original RB4DX desktop directions also mention placing the plugin in
 `sce_module`; that is *not* enough on Android, and this app uses the open-source

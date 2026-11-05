@@ -38,12 +38,13 @@ integrating the backend.
 
 The debug APK has a separate application ID so it can be installed alongside
 the working importer without deleting the user's Deluxe data. It bundles the
-patched AArch64 glibc dynamic loader in Android's native-library directory and
-offers a manual button to run the upstream FEXCore smoke executable for up to
-20 seconds. It captures the exit code and subprocess output and offers a Copy
-Report button. This is a real CPU process execution attempt, not PS4 game
-emulation. Android may deny the launch, and even a successful smoke run does
-not establish Vulkan graphics, game-directory access, or RB4DX compatibility.
+AArch64 glibc dynamic loader in Android's native-library directory and offers
+a manual test sequence: loader --version, loader --version with glibc rseq
+disabled, FEXCore guest CPU smoke with rseq disabled, and a linker trace if the
+CPU test fails. Each step has a 12-second timeout and its own captured exit
+status and subprocess output, with a Copy Report button. This is a genuine CPU
+process execution experiment, not PS4 game emulation. A successful smoke run
+does not establish Vulkan graphics, game-directory access, or RB4DX support.
 
 ## Minimum backend contract
 

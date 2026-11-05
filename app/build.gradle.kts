@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0-native-smoke"
+        versionCode = 4
+        versionName = "0.4.0-loader-diagnostics"
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
@@ -19,8 +19,8 @@ android {
     // preserving the user's 598 MiB of separately imported Deluxe assets.
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".probe"
-            manifestPlaceholders["appLabel"] = "RB4DX Runtime Probe"
+            applicationIdSuffix = ".probe2"
+            manifestPlaceholders["appLabel"] = "RB4DX Loader Diagnostics"
         }
     }
 
