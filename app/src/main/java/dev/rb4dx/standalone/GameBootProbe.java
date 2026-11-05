@@ -67,11 +67,14 @@ final class GameBootProbe {
         Path emulator = host.resolve("shadps4-arm64-fex");
         Path loader = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "librb4dx_host_loader.so");
+        Path x11SocketBridge = Path.of(context.getApplicationInfo().nativeLibraryDir,
+                "librb4dx_x11_redirect.so");
         Path socket = files.resolve("rb4dx-real-game-" + Long.toHexString(System.nanoTime())
                 + ".sock");
         if (!Files.isRegularFile(gameEboot) || !Files.isReadable(gameEboot)
-                || !Files.isRegularFile(loader) || !Files.isRegularFile(emulator)) {
-            return failed(report, "Native loader, emulator or selected eboot.bin unavailable");
+                || !Files.isRegularFile(loader) || !Files.isRegularFile(emulator)
+                || !Files.isRegularFile(x11SocketBridge)) {
+            return failed(report, "Native loader, X11 bridge, emulator or selected eboot.bin unavailable");
         }
         report.append("expected_title_id=").append(expectedTitle).append('\n')
                 .append("game_path=").append(gameEboot).append('\n')
@@ -120,6 +123,13 @@ final class GameBootProbe {
             builder.environment().put("HOME", files.toString());
             builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             builder.environment().put("LD_LIBRARY_PATH", host.toString());
+            // The Debian libX11/libxcb client uses /tmp/.X11-unix/Xn, whereas
+            // the embedded Android server must bind inside its private TMPDIR.
+            // Translate only this session's display socket at connect(2).
+            builder.environment().put("LD_PRELOAD", x11SocketBridge.toString());
+            builder.environment().put("RB4DX_X11_SOCKET_DIR",
+                    files.resolve("x11-session/tmp/.X11-unix").toString());
+            builder.environment().put("RB4DX_X11_DISPLAY_NUM", x11.display.substring(1));
             builder.environment().put("GLIBC_TUNABLES", "glibc.pthread.rseq=0");
             builder.environment().put("DISPLAY", x11.display);
             builder.environment().put("XAUTHORITY", x11.authority.toString());
