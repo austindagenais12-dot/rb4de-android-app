@@ -16,6 +16,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "bachata_vortek_protocol.h"
+
 #define TAG "RB4DX.Vortek.Server"
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define MAX_WINDOWS 32
@@ -49,6 +51,8 @@ struct Server {
     bool stopping;
     int accepted;
     int contexts_created;
+    int handshakes_ok;
+    int handshakes_failed;
 };
 
 typedef struct WindowBuffer {
@@ -73,11 +77,63 @@ static bool read_all(int fd, void* destination, size_t bytes) {
     return true;
 }
 
+static bool write_all(int fd, const void* source, size_t bytes) {
+    const unsigned char* p = source;
+    while (bytes) {
+        ssize_t n = send(fd, p, bytes, MSG_NOSIGNAL);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        p += n;
+        bytes -= (size_t)n;
+    }
+    return true;
+}
+
+static bool handle_handshake(Connection* conn, uint32_t length) {
+    Server* server = conn->server;
+    BachataVortekHandshakeRequest request;
+    if (length != sizeof(request) || !read_all(conn->fd, &request, sizeof(request))) {
+        LOG("handshake_failed reason=invalid_request_length_or_body bytes=%u", length);
+        pthread_mutex_lock(&server->mutex);
+        server->handshakes_failed++;
+        pthread_mutex_unlock(&server->mutex);
+        return false;
+    }
+
+    const bool compatible = request.magic == BACHATA_VORTEK_MAGIC &&
+            request.proto_major == BACHATA_VORTEK_PROTO_MAJOR &&
+            request.proto_minor == BACHATA_VORTEK_PROTO_MINOR &&
+            request.pointer_size == sizeof(void*) &&
+            request.endianness == BACHATA_VORTEK_ENDIAN_LITTLE;
+    const uint32_t response_header[] = {
+        REQUEST_CODE_BACHATA_HANDSHAKE, sizeof(BachataVortekHandshakeResponse)
+    };
+    const BachataVortekHandshakeResponse response = {
+        .magic = BACHATA_VORTEK_MAGIC,
+        .proto_major = BACHATA_VORTEK_PROTO_MAJOR,
+        .proto_minor = BACHATA_VORTEK_PROTO_MINOR,
+        .status = compatible ? BACHATA_VORTEK_HANDSHAKE_OK : BACHATA_VORTEK_HANDSHAKE_MISMATCH,
+        .reserved = 0
+    };
+    bool sent = write_all(conn->fd, response_header, sizeof(response_header)) &&
+            write_all(conn->fd, &response, sizeof(response));
+    pthread_mutex_lock(&server->mutex);
+    if (compatible && sent) server->handshakes_ok++;
+    else server->handshakes_failed++;
+    pthread_mutex_unlock(&server->mutex);
+    LOG("handshake_%s protocol=%u.%u pointer_size=%u endian=%u sent=%d",
+            compatible && sent ? "ok" : "failed", (unsigned)request.proto_major,
+            (unsigned)request.proto_minor, (unsigned)request.pointer_size,
+            (unsigned)request.endianness, sent);
+    return compatible && sent;
+}
+
 static void* connection_thread(void* arg) {
     Connection* conn = arg;
     Server* server = conn->server;
     JNIEnv* env = NULL;
     jlong context = 0;
+    bool handshook = false;
     bool attached = (*server->vm)->AttachCurrentThread(server->vm, &env, NULL) == JNI_OK;
 
     if (attached) {
@@ -85,7 +141,10 @@ static void* connection_thread(void* arg) {
         while (read_all(conn->fd, header, sizeof(header))) {
             uint32_t request = header[0];
             uint32_t length = header[1];
-            if (request == 1 && length == 0 && context == 0) {
+            if (request == REQUEST_CODE_BACHATA_HANDSHAKE && !handshook && !context) {
+                if (!handle_handshake(conn, length)) break;
+                handshook = true;
+            } else if (request == 1 && length == 0 && context == 0) {
                 context = Java_com_winlator_xenvironment_components_VortekRendererComponent_createVkContext(
                         env, server->component, conn->fd, server->options);
                 LOG("context_created=%d", context != 0);
@@ -240,6 +299,30 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeCreatedC
     int created = server->contexts_created;
     pthread_mutex_unlock(&server->mutex);
     return created;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeHandshakesOk(
+        JNIEnv* env, jobject component, jlong ptr) {
+    (void)env; (void)component;
+    if (!ptr) return 0;
+    Server* server = (Server*)(uintptr_t)ptr;
+    pthread_mutex_lock(&server->mutex);
+    int count = server->handshakes_ok;
+    pthread_mutex_unlock(&server->mutex);
+    return count;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeHandshakesFailed(
+        JNIEnv* env, jobject component, jlong ptr) {
+    (void)env; (void)component;
+    if (!ptr) return 0;
+    Server* server = (Server*)(uintptr_t)ptr;
+    pthread_mutex_lock(&server->mutex);
+    int count = server->handshakes_failed;
+    pthread_mutex_unlock(&server->mutex);
+    return count;
 }
 
 JNIEXPORT void JNICALL

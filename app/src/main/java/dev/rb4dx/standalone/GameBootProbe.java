@@ -186,6 +186,8 @@ final class GameBootProbe {
             String emulatorLog = tail(capture);
             int vortekConnections = vortek.connectedClients();
             int vortekContexts = vortek.createdContexts();
+            int vortekHandshakesOk = vortek.handshakesOk();
+            int vortekHandshakesFailed = vortek.handshakesFailed();
 
             // These are checkpoints, not a claim that the game rendered.
             boolean accepted = !frames.contains("ERROR code=CONTENT_INVALID")
@@ -205,6 +207,8 @@ final class GameBootProbe {
                     .append("emulator_run_marker=").append(reachedEmulator).append('\n')
                     .append("guest_running_event=").append(reachedGuest).append('\n')
                     .append("vortek_client_connections=").append(vortekConnections).append('\n')
+                    .append("vortek_handshakes_ok=").append(vortekHandshakesOk).append('\n')
+                    .append("vortek_handshakes_failed=").append(vortekHandshakesFailed).append('\n')
                     .append("vortek_contexts_created=").append(vortekContexts).append('\n')
                     .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
                     .append("checkpoint=").append(checkpoint).append('\n')

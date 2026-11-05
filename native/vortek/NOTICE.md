@@ -9,9 +9,13 @@ This app uses the real Android Vortek transport server compiled from the
   (support libraries, including the libadrenotools subproject)
 - The corresponding Linux glibc Vortek client is
   JICA98/vortek commit 9325b6060fc1c690234e102fcbbb1e0283b8892e.
+- The Bachata-specific Vortek handshake wire format is from
+  zenithblue-oss/shadps4-arm64 `runtime/vortek-protocol/bachata_vortek_protocol.h`
+  (LGPL-2.1-or-later). A wire-compatible subset is included in this bridge.
 
-The Android server is linked to an app-private Unix socket and sends shared
-memory file descriptors to the pinned Linux Vulkan client. **This milestone does
+The Android server is linked to an app-private Unix socket, negotiates the
+Bachata handshake, and sends shared memory file descriptors to the pinned Linux
+Vulkan client. **This milestone does
 not yet present GPU image buffers to an Android display, track native X11
 window IDs, or establish that Rock Band 4 itself boots.** These require an
 Android compositor/surface integration and guest compatibility work.

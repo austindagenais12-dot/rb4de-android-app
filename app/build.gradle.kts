@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.12.1-x11-bridge-restored"
+        versionCode = 18
+        versionName = "0.12.2-vortek-handshake"
         ndk {
             abiFilters.add("arm64-v8a")
         }
