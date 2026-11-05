@@ -65,6 +65,7 @@ final class GameBootProbe {
         Path portableUserDir = emulatorWorkingDir.resolve("user");
         Path host = runtimeDirectory.resolve("host").normalize();
         Path emulator = host.resolve("shadps4-arm64-fex");
+        Path vulkanDriverFile = host.resolve("vulkan/icd.d/vortek.json");
         Path loader = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "librb4dx_host_loader.so");
         Path x11SocketBridge = Path.of(context.getApplicationInfo().nativeLibraryDir,
@@ -73,8 +74,9 @@ final class GameBootProbe {
                 + ".sock");
         if (!Files.isRegularFile(gameEboot) || !Files.isReadable(gameEboot)
                 || !Files.isRegularFile(loader) || !Files.isRegularFile(emulator)
-                || !Files.isRegularFile(x11SocketBridge)) {
-            return failed(report, "Native loader, X11 bridge, emulator or selected eboot.bin unavailable");
+                || !Files.isRegularFile(x11SocketBridge)
+                || !Files.isReadable(vulkanDriverFile)) {
+            return failed(report, "Native loader, X11 bridge, Vulkan ICD, emulator or eboot.bin unavailable");
         }
         report.append("expected_title_id=").append(expectedTitle).append('\n')
                 .append("game_path=").append(gameEboot).append('\n')
@@ -82,7 +84,8 @@ final class GameBootProbe {
                 .append("deluxe_plugin_requested=false\n")
                 .append("game_patch_loading=false\n")
                 .append("android_surface_attached=false\n")
-                .append("vulkan_proxy_attached=false\n");
+                .append("vulkan_proxy_attached=false\n")
+                .append("vulkan_icd_file=").append(vulkanDriverFile).append('\n');
 
         int serverFd = -1;
         ExecutorService listener = null;
@@ -123,6 +126,14 @@ final class GameBootProbe {
             builder.environment().put("HOME", files.toString());
             builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             builder.environment().put("LD_LIBRARY_PATH", host.toString());
+            // The Linux Vulkan loader does not search the Android app's
+            // private runtime directory on its own. Use the packaged glibc
+            // Vortek driver manifest explicitly; never claim a renderer is
+            // attached until its separate Android server exists.
+            builder.environment().put("VK_DRIVER_FILES", vulkanDriverFile.toString());
+            builder.environment().put("VK_ICD_FILENAMES", vulkanDriverFile.toString());
+            builder.environment().put("VK_LOADER_DEBUG", "error,warn,driver");
+            builder.environment().put("BACHATA_VORTEK_LOG_LEVEL", "2");
             // The Debian libX11/libxcb client uses /tmp/.X11-unix/Xn, whereas
             // the embedded Android server must bind inside its private TMPDIR.
             // Translate only this session's display socket at connect(2).

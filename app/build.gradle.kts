@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.11.0-private-x11-socket"
+        versionCode = 15
+        versionName = "0.11.1-vulkan-icd-diagnostic"
         ndk {
             abiFilters.add("arm64-v8a")
         }
