@@ -10,17 +10,16 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.12.6-turnip-backend-test"
+        versionCode = 13
+        versionName = "0.12.7-turnip-side-by-side-test"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // This independent test app is intentionally installed alongside the
-    // previous .bridge build. GitHub's ephemeral debug signatures cannot
-    // safely update that earlier build without a matching private key.
+    // Install this Turnip test alongside the previous .linuxvk app so existing
+    // private runtime, save data, and app settings remain untouched.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
@@ -31,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk"
-            manifestPlaceholders["appLabel"] = "RB4DX Real Game Test"
+            applicationIdSuffix = ".linuxvk.turnip"
+            manifestPlaceholders["appLabel"] = "RB4DX Turnip Test"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }
