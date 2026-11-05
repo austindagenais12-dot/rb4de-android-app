@@ -57,6 +57,12 @@ public final class VortekRendererComponent implements AutoCloseable {
         // The pinned Vortek JNI already loads custom AdrenoTools drivers when
         // provided an absolute library path. Null preserves system Vulkan.
         initVulkanWrapper(context.getApplicationInfo().nativeLibraryDir, libvulkanPath);
+        if (!nativeVulkanReady()) {
+            throw new IllegalStateException("Vortek Vulkan initialization failed for "
+                    + (libvulkanPath == null ? "System Adreno" : "Mesa Turnip")
+                    + ": required function pointers unavailable. "
+                    + "Check libhook_impl.so and libmain_hook.so in APK.");
+        }
     }
 
     public int windowUpdateCount() { return windowUpdates.get(); }
@@ -161,6 +167,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native long createVkContext(int clientFd, Options options);
     private native void destroyVkContext(long contextPtr);
     private native void initVulkanWrapper(String nativeLibraryDir, String libvulkanPath);
+    private native boolean nativeVulkanReady();
     private native boolean handleExtraDataRequest(long contextPtr, int requestCode, int requestLength);
 
     private native long startNativeServer(String path, Options options);

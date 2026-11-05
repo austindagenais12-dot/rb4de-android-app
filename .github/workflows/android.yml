@@ -184,11 +184,15 @@ jobs:
           git -C "$server_src" checkout -q --detach FETCH_HEAD
           test "$(git -C "$server_src" rev-parse HEAD)" = "$server_rev"
           cmake -S native/vortek -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DWINLATOR_SOURCE="$winlator_src" -DVORTEK_SERVER_SOURCE="$server_src"
-          cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge --parallel 4
+          cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge hook_impl main_hook --parallel 4
           install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libwinlator.so
           install -m 0755 "$(find "$build_dir" -name libvortekrenderer.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libvortekrenderer.so
           install -m 0755 "$(find "$build_dir" -name librb4dx_vortek_bridge.so -print -quit)" app/src/main/jniLibs/arm64-v8a/librb4dx_vortek_bridge.so
-          for lib in libwinlator.so libvortekrenderer.so librb4dx_vortek_bridge.so; do
+          # The custom Turnip loader uses AdrenoTools hooks inside a Vulkan namespace.
+          # Without these two libraries it silently returns no Vulkan entrypoints.
+          install -m 0755 "$(find "$build_dir" -name libhook_impl.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libhook_impl.so
+          install -m 0755 "$(find "$build_dir" -name libmain_hook.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libmain_hook.so
+          for lib in libwinlator.so libvortekrenderer.so librb4dx_vortek_bridge.so libhook_impl.so libmain_hook.so; do
             readelf -h "app/src/main/jniLibs/arm64-v8a/$lib" | grep -Eq 'Machine:.*AArch64'
           done
       # Mesa Turnip is bundled in the APK's nativeLibraryDir, not extracted
@@ -252,7 +256,8 @@ jobs:
           test -s "$apk"
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
-              librb4dx_vortek_bridge.so libvulkan_freedreno.so; do
+              librb4dx_vortek_bridge.so libvulkan_freedreno.so \
+              libhook_impl.so libmain_hook.so; do
             unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$name"
           done
       - uses: actions/upload-artifact@v4

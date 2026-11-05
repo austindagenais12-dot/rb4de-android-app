@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "bachata_vortek_protocol.h"
+#include "vulkan_wrapper.h"
 
 #define TAG "RB4DX.Vortek.Server"
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -417,4 +418,24 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_releaseNativeB
         memset(&buffers[i], 0, sizeof(buffers[i]));
     }
     pthread_mutex_unlock(&buffer_mutex);
+}
+
+// Vortek upstream does not reject a failed custom Vulkan driver load. Guard
+// its first Vulkan call before a worker thread can call through a null pointer.
+extern VulkanWrapper vulkanWrapper;
+JNIEXPORT jboolean JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeVulkanReady(
+        JNIEnv* env, jobject component) {
+    (void)env;
+    (void)component;
+    const bool create = vulkanWrapper.vkCreateInstance != NULL;
+    const bool extensions = vulkanWrapper.vkEnumerateInstanceExtensionProperties != NULL;
+    const bool instance_proc = vulkanWrapper.vkGetInstanceProcAddr != NULL;
+    const bool device_proc = vulkanWrapper.vkGetDeviceProcAddr != NULL;
+    if (!(create && extensions && instance_proc && device_proc)) {
+        LOG("vulkan_wrapper_incomplete create_instance=%d enumerate_extensions=%d "
+                "instance_proc=%d device_proc=%d", create, extensions,
+                instance_proc, device_proc);
+    }
+    return create && extensions && instance_proc && device_proc ? JNI_TRUE : JNI_FALSE;
 }

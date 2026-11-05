@@ -114,6 +114,15 @@ final class GameBootProbe {
             report.append("android_gpu_driver=turnip\nturnip_driver_available=false\n");
             return failed(report, "Turnip selected but bundled driver is missing; install the full APK or select System Adreno");
         }
+        Path hookImpl = Path.of(context.getApplicationInfo().nativeLibraryDir,
+                "libhook_impl.so");
+        Path mainHook = Path.of(context.getApplicationInfo().nativeLibraryDir,
+                "libmain_hook.so");
+        report.append("turnip_hook_impl_available=").append(Files.isRegularFile(hookImpl)).append('\n')
+                .append("turnip_main_hook_available=").append(Files.isRegularFile(mainHook)).append('\n');
+        if (useTurnip && (!Files.isRegularFile(hookImpl) || !Files.isRegularFile(mainHook))) {
+            return failed(report, "Turnip requires bundled AdrenoTools hook libraries; missing libhook_impl.so or libmain_hook.so");
+        }
         report.append("android_gpu_driver=").append(useTurnip ? "turnip" : "system_adreno").append('\n')
                 .append("turnip_driver_available=")
                 .append(Files.isRegularFile(turnipLibrary)).append('\n');

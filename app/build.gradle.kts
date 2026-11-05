@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.12.7-turnip-side-by-side-test"
+        versionCode = 14
+        versionName = "0.12.8-turnip-hooks-verified"
         ndk {
             abiFilters.add("arm64-v8a")
         }

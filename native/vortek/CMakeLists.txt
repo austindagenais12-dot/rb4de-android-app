@@ -23,4 +23,5 @@ add_subdirectory("${VORTEK_SERVER_SOURCE}" "${CMAKE_BINARY_DIR}/upstream-vortek"
 add_library(rb4dx_vortek_bridge SHARED vortek_bridge.c)
 target_compile_features(rb4dx_vortek_bridge PRIVATE c_std_11)
 target_compile_options(rb4dx_vortek_bridge PRIVATE -Wall -Wextra -Werror)
+target_include_directories(rb4dx_vortek_bridge PRIVATE "${VORTEK_SERVER_SOURCE}/include")
 target_link_libraries(rb4dx_vortek_bridge PRIVATE vortekrenderer log android)
