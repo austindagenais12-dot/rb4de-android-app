@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0-control-bridge-probe"
+        versionCode = 6
+        versionName = "0.6.0-launch-readiness-probes"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -23,7 +23,7 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".bridge"
-            manifestPlaceholders["appLabel"] = "RB4DX Native Bridge Test"
+            manifestPlaceholders["appLabel"] = "RB4DX Launch Readiness Test"
         }
     }
 

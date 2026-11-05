@@ -12,6 +12,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.view.Gravity;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -48,16 +50,27 @@ public final class MainActivity extends Activity {
     private TextView runtimeStatus;
     private TextView probeStatus;
     private TextView bridgeStatus;
+    private TextView gamePreflightStatus;
+    private TextView vulkanStatus;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
     private Button bridgeButton;
     private Button copyBridgeButton;
+    private Button gamePreflightButton;
+    private Button copyGamePreflightButton;
+    private Button vulkanButton;
+    private Button copyVulkanButton;
+    private SurfaceView vulkanSurface;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
     private String lastBridgeReport;
+    private String lastGamePreflightReport;
+    private String lastVulkanReport;
     private boolean smokeRunning;
     private boolean bridgeRunning;
+    private boolean gamePreflightRunning;
+    private boolean vulkanRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -103,7 +116,23 @@ public final class MainActivity extends Activity {
         body.addView(regions);
         addGap(body, 18);
 
-        addText(body, "3. Import Rock Band 4 Deluxe", 19, FG, true);
+        addText(body, "3. Inspect your game files", 19, FG, true);
+        addText(body,
+                "Checks eboot.bin and sce_sys/param.sfo through your saved folder permission. "
+                        + "Verifies the game region and whether the native emulator can read the raw path. "
+                        + "No game files are copied or modified.",
+                14, MUTED, false);
+        gamePreflightStatus = addText(body, "Select your Rock Band 4 folder above first.",
+                13, MUTED, false);
+        gamePreflightButton = button(body, "Inspect game folder (read only)");
+        gamePreflightButton.setEnabled(false);
+        gamePreflightButton.setOnClickListener(v -> runGamePreflight());
+        copyGamePreflightButton = button(body, "Copy game inspection report");
+        copyGamePreflightButton.setEnabled(false);
+        copyGamePreflightButton.setOnClickListener(v -> copyGamePreflightReport());
+        addGap(body, 22);
+
+        addText(body, "4. Import Rock Band 4 Deluxe", 19, FG, true);
         addText(body, "Select your existing RB4DX-PS4.zip. The app unpacks it into its own private storage.",
                 14, MUTED, false);
         modStatus = addText(body, "Not imported", 14, MUTED, false);
@@ -112,7 +141,7 @@ public final class MainActivity extends Activity {
         detailStatus = addText(body, "", 13, MUTED, false);
         addGap(body, 26);
 
-        addText(body, "4. Native emulator runtime", 19, FG, true);
+        addText(body, "5. Native emulator runtime", 19, FG, true);
         runtimeStatus = addText(body, "Checking bundled ARM64 runtime…", 14, MUTED, false);
         addText(body,
                 "The runtime is installed and verified automatically in this test build. No root or Shizuku is needed.",
@@ -130,7 +159,7 @@ public final class MainActivity extends Activity {
         copyProbeButton.setOnClickListener(v -> copyProbeReport());
         addGap(body, 22);
 
-        addText(body, "5. Android runtime control bridge", 19, FG, true);
+        addText(body, "6. Android runtime control bridge", 19, FG, true);
         addText(body,
                 "Connects to the real emulator's local control socket and checks startup and error events. "
                         + "Uses a deliberately nonexistent game file; no game or mod files are touched.",
@@ -144,7 +173,43 @@ public final class MainActivity extends Activity {
         copyBridgeButton.setOnClickListener(v -> copyBridgeReport());
         addGap(body, 22);
 
-        addText(body, "6. Launch", 19, FG, true);
+        addText(body, "7. Android Vulkan display bridge", 19, FG, true);
+        addText(body,
+                "Tests the real Vulkan driver against an Android SurfaceView: GPU enumeration, "
+                        + "surface creation, present-capable queues, and swapchain support. "
+                        + "This does not launch the emulator's renderer yet.",
+                14, MUTED, false);
+        vulkanStatus = addText(body, "Waiting for the Android display surface…",
+                13, MUTED, false);
+        vulkanSurface = new SurfaceView(this);
+        LinearLayout.LayoutParams surfaceParams = new LinearLayout.LayoutParams(-1, dp(100));
+        surfaceParams.topMargin = dp(12);
+        body.addView(vulkanSurface, surfaceParams);
+        vulkanButton = button(body, "Test Vulkan surface and GPU");
+        vulkanButton.setEnabled(false);
+        vulkanButton.setOnClickListener(v -> runVulkanProbe());
+        copyVulkanButton = button(body, "Copy Vulkan report");
+        copyVulkanButton.setEnabled(false);
+        copyVulkanButton.setOnClickListener(v -> copyVulkanReport());
+        vulkanSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                vulkanStatus.setText("Android display surface ready for Vulkan testing.");
+                if (!vulkanRunning) vulkanButton.setEnabled(true);
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                vulkanButton.setEnabled(false);
+                vulkanStatus.setText("Android display surface not currently available.");
+            }
+        });
+        addGap(body, 22);
+
+        addText(body, "8. Launch", 19, FG, true);
         Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
@@ -247,6 +312,70 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, "Bridge report copied", Toast.LENGTH_SHORT).show();
     }
 
+    private void runGamePreflight() {
+        String saved = preferences.getString(GAME_URI, null);
+        if (saved == null || gamePreflightRunning) return;
+        gamePreflightRunning = true;
+        gamePreflightButton.setEnabled(false);
+        gamePreflightStatus.setText("Reading Rock Band 4 metadata through Android's folder permission…");
+        Uri uri = Uri.parse(saved);
+        String title = selectedTitleId;
+        importer.submit(() -> {
+            GamePreflight.Result result = GamePreflight.inspect(this, uri, title);
+            runOnUiThread(() -> {
+                gamePreflightRunning = false;
+                gamePreflightButton.setEnabled(true);
+                lastGamePreflightReport = result.report;
+                copyGamePreflightButton.setEnabled(true);
+                gamePreflightStatus.setText((result.succeeded ? "GAME FILES VERIFIED" : "GAME FILES NEED ATTENTION")
+                        + "\n" + result.report.substring(0, Math.min(1800, result.report.length())));
+            });
+        });
+    }
+
+    private void copyGamePreflightReport() {
+        copyReport("RB4DX game inspection", lastGamePreflightReport);
+    }
+
+    private void runVulkanProbe() {
+        if (vulkanRunning || vulkanSurface == null
+                || !vulkanSurface.getHolder().getSurface().isValid()) return;
+        vulkanRunning = true;
+        vulkanButton.setEnabled(false);
+        vulkanStatus.setText("Querying Android Vulkan GPU and display surface…");
+        android.view.Surface surface = vulkanSurface.getHolder().getSurface();
+        runtimeWorker.submit(() -> {
+            String report;
+            try {
+                report = NativeVulkanSurfaceProbe.run(surface);
+            } catch (Throwable error) {
+                report = "RB4DX_VULKAN_SURFACE_FAILED\n"
+                        + error.getClass().getSimpleName() + ": " + error.getMessage();
+            }
+            String finalReport = report;
+            runOnUiThread(() -> {
+                vulkanRunning = false;
+                vulkanButton.setEnabled(vulkanSurface.getHolder().getSurface().isValid());
+                lastVulkanReport = finalReport;
+                copyVulkanButton.setEnabled(true);
+                vulkanStatus.setText(finalReport.substring(0,
+                        Math.min(1800, finalReport.length())));
+            });
+        });
+    }
+
+    private void copyVulkanReport() {
+        copyReport("RB4DX Vulkan surface", lastVulkanReport);
+    }
+
+    private void copyReport(String label, String report) {
+        if (report == null) return;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, report));
+        Toast.makeText(this, "Report copied", Toast.LENGTH_SHORT).show();
+    }
+
     private void chooseGameFolder() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -338,6 +467,10 @@ public final class MainActivity extends Activity {
         gameStatus.setText(uri == null
                 ? "No game folder selected"
                 : "Game folder selected (read access saved)");
+        if (gamePreflightButton != null) {
+            gamePreflightButton.setEnabled(uri != null && !gamePreflightRunning);
+            if (uri == null) gamePreflightStatus.setText("Select your Rock Band 4 folder above first.");
+        }
         Path user = getFilesDir().toPath().resolve("shadps4/user");
         Path data = user.resolve("data").resolve(selectedTitleId).resolve("GoldHEN/RB4DX");
         Path plugin = user.resolve("custom_modules").resolve(selectedTitleId)

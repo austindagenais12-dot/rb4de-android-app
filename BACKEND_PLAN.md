@@ -37,6 +37,12 @@ integrating the backend.
   the `--bachata-socket` upstream protocol flag is used. Its standalone probe
   launches with an intentionally absent game file, expecting
   `HELLO`, `Starting`, `ERROR CONTENT_INVALID`, then `Stopped`.
+- On-device control probe returned `RB4DX_CONTROL_BRIDGE_PASS`, confirming all
+  four lifecycle frames arrived and the intentionally invalid game was
+  rejected with exit code 1.
+- The next launch-readiness APK adds read-only SAF game inspection with PSF
+  parsing and an independent Android Vulkan SurfaceView probe. Passing these
+  checks does not connect the Linux renderer to the Android display.
 - The Play button remains disabled until a real Android launch bridge works.
 
 ## First on-device CPU execution experiment
@@ -62,6 +68,19 @@ all four lifecycle messages arrive through the socket. A separate **Copy bridge
 report** button gathers these results. It does not open Rock Band 4 or the mod.
 The protocol option retains its upstream `--bachata-socket` spelling; this
 does not use the Bachata Android APK or another application's storage.
+
+## Game-file and GPU display probes
+
+The game-file probe enumerates the user's selected Android DocumentProvider
+folder, opens only the first bytes of `eboot.bin`, reads and parses
+`sce_sys/param.sfo`, and validates `TITLE_ID` and `APP_VER`. It separately
+probes whether the physical folder is readable through a direct `/storage/`
+Linux path. A failure there is expected on many scoped-storage Android
+versions and indicates the need for a native filesystem bridge. It does not
+copy game assets. The Vulkan probe uses Android `SurfaceView` and NDK Vulkan
+to create a genuine platform `VkSurfaceKHR`, enumerate devices, check a
+present-capable graphics queue and `VK_KHR_swapchain`. It does not create
+an emulation renderer or integrate the existing Vortek stack.
 
 ## Minimum backend contract
 

@@ -1,6 +1,7 @@
 # RB4DX Standalone for Android
 
-**Status: experimental Android control-channel bridge, not a playable emulator yet.**
+**Status: experimental launch-readiness tests (SAF game inspection, native control
+channel, and Vulkan SurfaceView), not a playable emulator yet.**
 
 This is an independent, single-game Android project for running a legally owned
 PS4 copy of **Rock Band 4 (update 2.21)** with **Rock Band 4 Deluxe**. It does
@@ -36,6 +37,18 @@ It does not modify or share storage with Bachata S4.
   counts as a **PASS only when the socket events are received**. No game or
   Deluxe files are opened; no import is needed. **Copy bridge report** exports
   the full diagnostic output for troubleshooting.
+* **Inspect game folder (read only)** opens the saved Android document tree,
+  checks `eboot.bin`, parses `sce_sys/param.sfo` to show the game title ID and
+  version, and compares the game region. It separately checks whether that
+  document-tree folder is directly readable by a Linux pathname. This matters
+  because access through Android's document picker does *not* inherently give
+  native Linux code permission to traverse the same directory. This inspection
+  does not copy or modify the game.
+* **Test Vulkan surface and GPU** uses a real Android `SurfaceView`, converts it
+  into an `ANativeWindow`, creates a Vulkan `VkSurfaceKHR`, and checks for a
+  present-capable graphics queue, surface formats and swapchain support. It
+  does not render the PS4 game yet, and it does not prove the Linux emulator
+  can use the Android Vulkan surface.
 
 The original RB4DX desktop directions also mention placing the plugin in
 `sce_module`; that is *not* enough on Android, and this app uses the open-source
@@ -43,9 +56,9 @@ core's dedicated custom-modules directory instead.
 
 ## What is still needed for an actual playable APK
 
-1. Integrate Android graphics/Vulkan surfaces, audio, controller input and a
-   full emulator lifecycle. The ARM64 core, FEX and startup control protocol
-   have preliminary Android tests, but game compatibility remains untested.
+1. Integrate the emulator's Linux/Vortek renderer with the native Android
+   Vulkan display surface, audio, controller input and a full emulator
+   lifecycle. Hardware/surface inspection is only the first graphics check.
 2. Bridge the Android document URI for the game directory to the native
    filesystem used by the emulator without duplicating large game assets.
 3. Implement real game launch, on-screen controls and robust logs.
@@ -84,9 +97,10 @@ half-hour compiling it. Cache entries can expire or be evicted, so a future
 run may occasionally need to rebuild. The successful core is also attached to
 the run as a diagnostic artifact retained for seven days.
 
-The Android control-channel bridge now has an experimental JNI socket
-implementation, but Vulkan surface transport and native game-directory mounts
-are **not implemented yet**. See BACKEND_PLAN.md for remaining work.
+The Android control-channel bridge has a working on-device JNI socket test;
+game-content access and Android GPU presentation now have standalone probes.
+**Emulator Vulkan surface transport and native game-directory mounts remain
+unimplemented.** See BACKEND_PLAN.md for remaining work.
 Native shadPS4 compilation and Linux runtime packaging have succeeded in
 GitHub Actions. The diagnostic bridge is not a working Play button or evidence
 of game compatibility.
