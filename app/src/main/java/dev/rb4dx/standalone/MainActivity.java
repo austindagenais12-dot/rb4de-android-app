@@ -2,6 +2,7 @@
 package dev.rb4dx.standalone;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -10,7 +11,9 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.DocumentsContract;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -52,6 +55,8 @@ public final class MainActivity extends Activity {
     private TextView bridgeStatus;
     private TextView gamePreflightStatus;
     private TextView vulkanStatus;
+    private TextView allFilesAccessStatus;
+    private TextView nativeFileStatus;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
@@ -61,16 +66,20 @@ public final class MainActivity extends Activity {
     private Button copyGamePreflightButton;
     private Button vulkanButton;
     private Button copyVulkanButton;
+    private Button nativeFileButton;
+    private Button copyNativeFileButton;
     private SurfaceView vulkanSurface;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
     private String lastBridgeReport;
     private String lastGamePreflightReport;
     private String lastVulkanReport;
+    private String lastNativeFileReport;
     private boolean smokeRunning;
     private boolean bridgeRunning;
     private boolean gamePreflightRunning;
     private boolean vulkanRunning;
+    private boolean nativeFileRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -132,7 +141,28 @@ public final class MainActivity extends Activity {
         copyGamePreflightButton.setOnClickListener(v -> copyGamePreflightReport());
         addGap(body, 22);
 
-        addText(body, "4. Import Rock Band 4 Deluxe", 19, FG, true);
+        addText(body, "4. Direct native game-file access", 19, FG, true);
+        addText(body,
+                "Optional Android All files access permission. It permits this app to access shared "
+                        + "storage broadly, not just Rock Band 4, but cannot unlock other apps' "
+                        + "protected Android/data folders. We use it only for a read-only game-file test. "
+                        + "You may revoke it in Android Settings at any time.",
+                14, MUTED, false);
+        allFilesAccessStatus = addText(body, "Checking Android storage permission…",
+                13, MUTED, false);
+        Button storageSettingsButton = button(body, "Open Android All files access settings");
+        storageSettingsButton.setOnClickListener(v -> openAllFilesSettings());
+        nativeFileStatus = addText(body, "Waiting for permission and a selected game folder.",
+                13, MUTED, false);
+        nativeFileButton = button(body, "Verify direct native eboot access (read only)");
+        nativeFileButton.setEnabled(false);
+        nativeFileButton.setOnClickListener(v -> runNativeFileProbe());
+        copyNativeFileButton = button(body, "Copy native file-access report");
+        copyNativeFileButton.setEnabled(false);
+        copyNativeFileButton.setOnClickListener(v -> copyReport("RB4DX direct native storage", lastNativeFileReport));
+        addGap(body, 22);
+
+        addText(body, "5. Import Rock Band 4 Deluxe", 19, FG, true);
         addText(body, "Select your existing RB4DX-PS4.zip. The app unpacks it into its own private storage.",
                 14, MUTED, false);
         modStatus = addText(body, "Not imported", 14, MUTED, false);
@@ -141,7 +171,7 @@ public final class MainActivity extends Activity {
         detailStatus = addText(body, "", 13, MUTED, false);
         addGap(body, 26);
 
-        addText(body, "5. Native emulator runtime", 19, FG, true);
+        addText(body, "6. Native emulator runtime", 19, FG, true);
         runtimeStatus = addText(body, "Checking bundled ARM64 runtime…", 14, MUTED, false);
         addText(body,
                 "The runtime is installed and verified automatically in this test build. No root or Shizuku is needed.",
@@ -159,7 +189,7 @@ public final class MainActivity extends Activity {
         copyProbeButton.setOnClickListener(v -> copyProbeReport());
         addGap(body, 22);
 
-        addText(body, "6. Android runtime control bridge", 19, FG, true);
+        addText(body, "7. Android runtime control bridge", 19, FG, true);
         addText(body,
                 "Connects to the real emulator's local control socket and checks startup and error events. "
                         + "Uses a deliberately nonexistent game file; no game or mod files are touched.",
@@ -173,7 +203,7 @@ public final class MainActivity extends Activity {
         copyBridgeButton.setOnClickListener(v -> copyBridgeReport());
         addGap(body, 22);
 
-        addText(body, "7. Android Vulkan display bridge", 19, FG, true);
+        addText(body, "8. Android Vulkan display bridge", 19, FG, true);
         addText(body,
                 "Tests the real Vulkan driver against an Android SurfaceView: GPU enumeration, "
                         + "surface creation, present-capable queues, and swapchain support. "
@@ -209,7 +239,7 @@ public final class MainActivity extends Activity {
         });
         addGap(body, 22);
 
-        addText(body, "8. Launch", 19, FG, true);
+        addText(body, "9. Launch", 19, FG, true);
         Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
@@ -223,6 +253,78 @@ public final class MainActivity extends Activity {
         setContentView(scroll);
         refreshStatus();
         prepareNativeRuntime();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshNativeAccessStatus();
+    }
+
+    private void openAllFilesSettings() {
+        Intent appSettings = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+        appSettings.setData(Uri.fromParts("package", getPackageName(), null));
+        try {
+            startActivity(appSettings);
+        } catch (ActivityNotFoundException error) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            } catch (ActivityNotFoundException missing) {
+                Toast.makeText(this, "Android did not expose All files access settings",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void refreshNativeAccessStatus() {
+        if (allFilesAccessStatus == null) return;
+        boolean granted = Environment.isExternalStorageManager();
+        allFilesAccessStatus.setText(granted
+                ? "All files access: GRANTED by Android"
+                : "All files access: NOT GRANTED (tap settings and enable it if comfortable)");
+        String selected = preferences.getString(GAME_URI, null);
+        nativeFileButton.setEnabled(granted && selected != null && !nativeFileRunning);
+        if (!granted) {
+            nativeFileStatus.setText("Waiting for optional All files access permission.");
+        } else if (selected == null) {
+            nativeFileStatus.setText("Select the Rock Band 4 folder at the top first.");
+        } else if (lastNativeFileReport == null && !nativeFileRunning) {
+            nativeFileStatus.setText("Ready to test opening eboot.bin from native Android code.");
+        }
+    }
+
+    private void runNativeFileProbe() {
+        if (nativeFileRunning || !Environment.isExternalStorageManager()) return;
+        String saved = preferences.getString(GAME_URI, null);
+        if (saved == null) return;
+        nativeFileRunning = true;
+        nativeFileButton.setEnabled(false);
+        nativeFileStatus.setText("Opening only eboot.bin from native code (read-only)…");
+        String folder = GamePreflight.rawPrimaryPath(Uri.parse(saved));
+        importer.submit(() -> {
+            String report;
+            if (folder == null) {
+                report = "RB4DX_DIRECT_NATIVE_ACCESS_FAILED\n"
+                        + "reason=Selected document provider does not map to primary shared storage\n"
+                        + "note=Use a game folder in ordinary shared storage, not protected Android/data\n";
+            } else {
+                try {
+                    report = NativeFileAccessProbe.inspect(Path.of(folder, "eboot.bin").toString());
+                } catch (Throwable error) {
+                    report = "RB4DX_DIRECT_NATIVE_ACCESS_FAILED\n"
+                            + error.getClass().getSimpleName() + ": " + error.getMessage();
+                }
+            }
+            String finalReport = report;
+            runOnUiThread(() -> {
+                nativeFileRunning = false;
+                lastNativeFileReport = finalReport;
+                copyNativeFileButton.setEnabled(true);
+                nativeFileButton.setEnabled(Environment.isExternalStorageManager());
+                nativeFileStatus.setText(finalReport.substring(0,
+                        Math.min(1600, finalReport.length())));
+            });
+        });
     }
 
     private void prepareNativeRuntime() {
@@ -471,6 +573,7 @@ public final class MainActivity extends Activity {
             gamePreflightButton.setEnabled(uri != null && !gamePreflightRunning);
             if (uri == null) gamePreflightStatus.setText("Select your Rock Band 4 folder above first.");
         }
+        refreshNativeAccessStatus();
         Path user = getFilesDir().toPath().resolve("shadps4/user");
         Path data = user.resolve("data").resolve(selectedTitleId).resolve("GoldHEN/RB4DX");
         Path plugin = user.resolve("custom_modules").resolve(selectedTitleId)

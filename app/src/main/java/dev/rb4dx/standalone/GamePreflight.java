@@ -78,6 +78,8 @@ final class GamePreflight {
             boolean rawReadable = directPath != null
                     && Files.isRegularFile(Path.of(directPath, "eboot.bin"))
                     && Files.isReadable(Path.of(directPath, "eboot.bin"));
+            result.append("all_files_access_granted=")
+                    .append(Environment.isExternalStorageManager()).append('\n');
             result.append("raw_linux_path_readable=").append(rawReadable).append('\n');
 
             Document system = findChild(resolver, tree, rootId, "sce_sys");
@@ -135,7 +137,8 @@ final class GamePreflight {
         return null;
     }
 
-    private static String rawPrimaryPath(Uri tree) {
+    static String rawPrimaryPath(Uri tree) {
+        if (!"com.android.externalstorage.documents".equals(tree.getAuthority())) return null;
         String id = DocumentsContract.getTreeDocumentId(tree);
         if (id == null || !id.startsWith("primary:")) return null;
         String relative = id.substring("primary:".length());

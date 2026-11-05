@@ -1,7 +1,7 @@
 # RB4DX Standalone for Android
 
-**Status: experimental launch-readiness tests (SAF game inspection, native control
-channel, and Vulkan SurfaceView), not a playable emulator yet.**
+**Status: experimental launch-readiness tests (SAF, optional direct shared-storage
+access, native control channel, Vulkan SurfaceView), not a playable emulator yet.**
 
 This is an independent, single-game Android project for running a legally owned
 PS4 copy of **Rock Band 4 (update 2.21)** with **Rock Band 4 Deluxe**. It does
@@ -44,6 +44,14 @@ It does not modify or share storage with Bachata S4.
   because access through Android's document picker does *not* inherently give
   native Linux code permission to traverse the same directory. This inspection
   does not copy or modify the game.
+* **Direct native game-file access** offers an **optional** button to open
+  Android's All files access permission settings, followed by a read-only
+  `open`/`fstat`/`pread` diagnostic on the selected `eboot.bin`. The permission
+  allows this app broad access to shared storage, not solely the selected game;
+  the user must explicitly enable it in Android Settings and can revoke it at
+  any time. This does **not** bypass Android's protected `Android/data` folders
+  or copy the game. The native diagnostic only runs when permission is granted
+  and a user-selected game folder can be mapped to primary shared storage.
 * **Test Vulkan surface and GPU** uses a real Android `SurfaceView`, converts it
   into an `ANativeWindow`, creates a Vulkan `VkSurfaceKHR`, and checks for a
   present-capable graphics queue, surface formats and swapchain support. It
@@ -60,7 +68,10 @@ core's dedicated custom-modules directory instead.
    Vulkan display surface, audio, controller input and a full emulator
    lifecycle. Hardware/surface inspection is only the first graphics check.
 2. Bridge the Android document URI for the game directory to the native
-   filesystem used by the emulator without duplicating large game assets.
+   filesystem used by the emulator without duplicating large game assets. An
+   optional shared-storage direct-path test may remove this requirement for
+   games located in accessible directories such as Downloads; the actual Linux
+   shadPS4 process still needs a separate full-game launch test.
 3. Implement real game launch, on-screen controls and robust logs.
 4. Verify the Rock Band 4 executable, version, plugin loading, and Deluxe menus
    on the user's Snapdragon S24 Ultra. This is experimental emulator work.
@@ -75,6 +86,10 @@ Gradle 8.11.1. GitHub Actions workflow android.yml selects the latest
 successful native runtime, verifies its ZIP and manifest, stages both as
 Android assets, stages the glibc ARM64 loader as a native library, and builds
 the runtime-stage debug APK automatically.
+The workflow caches a non-production **debug signing key** for future debug
+builds, so once the user installs the v0.7 test package, subsequent builds
+should update without requiring uninstall/reimport while that CI cache remains
+available. This key is for debugging only, not for a future production release.
 On the phone, the app extracts and verifies the runtime on first launch.
 For local Gradle builds, supply both native runtime assets under
 app/src/main/assets/runtime first. Do not commit the large binary to Git.

@@ -82,6 +82,22 @@ to create a genuine platform `VkSurfaceKHR`, enumerate devices, check a
 present-capable graphics queue and `VK_KHR_swapchain`. It does not create
 an emulation renderer or integrate the existing Vortek stack.
 
+## Optional direct shared-storage access experiment
+
+The user selected Option 1 for accessing the existing game without copying it.
+The Android manifest declares `MANAGE_EXTERNAL_STORAGE` and the app exposes a
+manual Settings button rather than granting access itself. This is a broad
+shared-storage permission and must be enabled or revoked by the user. It does
+not grant access to another application's protected `Android/data` directory.
+
+For a selected game in primary shared storage, the app maps the document-tree
+ID to a normalized path under the primary external-storage directory. The new
+JNI probe uses Android-native `open(O_RDONLY | O_NOFOLLOW)`, `fstat` and a
+16-byte `pread` of `eboot.bin` to test **actual POSIX path access** without
+modifying/copying the game. If this passes, Linux shadPS4 still needs a direct
+game-boot probe; the Android-native test does not establish Linux glibc access,
+shader rendering or Deluxe plugin initialization.
+
 ## Minimum backend contract
 
 ```text
