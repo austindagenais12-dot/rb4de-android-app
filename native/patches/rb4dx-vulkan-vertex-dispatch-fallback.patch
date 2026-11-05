@@ -1,7 +1,14 @@
 diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
 --- a/src/video_core/renderer_vulkan/vk_instance.cpp
 +++ b/src/video_core/renderer_vulkan/vk_instance.cpp
-@@ -584,6 +584,20 @@ bool Instance::CreateDevice() {
+@@ -12,5 +12,6 @@
+ #include "sdl_window.h"
+ #include "video_core/renderer_vulkan/legacy_vertex_attributes.h"
+ #include "video_core/renderer_vulkan/liverpool_to_vk.h"
++#include "video_core/renderer_vulkan/rb4dx_dispatch_guard.h"
+ #include "video_core/renderer_vulkan/vk_instance.h"
+ #include "video_core/renderer_vulkan/vk_platform.h"
+@@ -584,6 +585,29 @@ bool Instance::CreateDevice() {
      device = std::move(dev);
  
      VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
@@ -19,6 +26,15 @@ diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/ren
 +    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBindVertexBuffers2 == nullptr) {
 +        LOG_WARNING(Render_Vulkan, "vkCmdBindVertexBuffers2 unavailable; using core binding");
 +    }
++    const bool feedback_loop_usable = RB4DX::HasUsableOptionalDispatch(
++        attachment_feedback_loop,
++        VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdSetAttachmentFeedbackLoopEnableEXT);
++    if (attachment_feedback_loop && !feedback_loop_usable) {
++        LOG_WARNING(Render_Vulkan,
++                    "vkCmdSetAttachmentFeedbackLoopEnableEXT unavailable despite support; "
++                    "disabling attachment feedback loop feature");
++    }
++    attachment_feedback_loop = feedback_loop_usable;
  
  
      // ── Vulkan 1.3 dispatch audit ─────────────────────────────────────────────

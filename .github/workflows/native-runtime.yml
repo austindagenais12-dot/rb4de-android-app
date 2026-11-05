@@ -3,13 +3,14 @@ name: Build ARM64 emulator runtime (experimental)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, fix/v0130-feedback-loop-dispatch]
     paths:
       - '.github/workflows/native-runtime.yml'
       - 'scripts/build-native-runtime.sh'
       - 'scripts/verify-native-runtime.py'
       - 'native/patches/rb4dx-sanitizer-hooks.patch'
       - 'native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch'
+      - 'native/patches/rb4dx_dispatch_guard.h'
 
 # Automatically replace a stale in-flight build when a fix is pushed.
 concurrency:
@@ -49,15 +50,19 @@ jobs:
           grep -n 'sceKernelGetSanitizerMallocReplaceExternal' \
             native-source/src/core/libraries/kernel/kernel.cpp
 
-      - name: Avoid null Vulkan vertex dispatch calls
+      - name: Guard missing optional Vulkan device dispatch calls
         shell: bash
         run: |
           set -euo pipefail
-          # Vortek can expose the dynamic vertex-input extension without its
-          # vkCmdSetVertexInputEXT pointer. Fall back to static vertex inputs.
+          # Vortek may advertise optional commands without their device proc
+          # pointers. Keep optional capabilities disabled if dispatch is absent.
+          install -m 644 native/patches/rb4dx_dispatch_guard.h \
+            native-source/src/video_core/renderer_vulkan/rb4dx_dispatch_guard.h
           git -C native-source apply --check ../native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch
           git -C native-source apply ../native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch
           grep -n 'vkCmdSetVertexInputEXT is unavailable' \
+            native-source/src/video_core/renderer_vulkan/vk_instance.cpp
+          grep -n 'vkCmdSetAttachmentFeedbackLoopEnableEXT unavailable' \
             native-source/src/video_core/renderer_vulkan/vk_instance.cpp
 
       # This cache holds only the completed ARM64 binaries. We save it BEFORE
@@ -67,7 +72,7 @@ jobs:
         id: core_cache
         uses: actions/cache/restore@v4
         with:
-          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v3-rb4dx-sanitizer-vertex
+          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v4-rb4dx-sanitizer-vertex-feedback
           path: |
             native-source/runtime/build/shadps4-arm64-stage
             native-source/runtime/build/fexcore-smoke-stage

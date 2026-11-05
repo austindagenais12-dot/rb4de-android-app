@@ -19,4 +19,10 @@ fi
 java -cp "$build_dir" InstallerSmokeTest
 java -cp "$build_dir" dev.rb4dx.standalone.StartupLogStoreTest
 java -cp "$build_dir" dev.rb4dx.standalone.NativeCrashSummaryTest
+c++ -std=c++20 -Wall -Wextra -Werror \
+  -I "$project_dir/native/patches" \
+  "$project_dir/tests/VulkanDispatchGuardTest.cpp" \
+  -o "$build_dir/VulkanDispatchGuardTest"
+"$build_dir/VulkanDispatchGuardTest"
+echo "PASS: optional Vulkan extension requires a valid dispatcher entrypoint"
 python3 "$project_dir/tests/test_runtime_verifier.py"
