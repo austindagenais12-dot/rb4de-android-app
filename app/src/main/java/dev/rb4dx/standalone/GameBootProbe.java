@@ -175,6 +175,7 @@ final class GameBootProbe {
             String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
             String emulatorLog = tail(capture);
             int vortekConnections = vortek.connectedClients();
+            int vortekContexts = vortek.createdContexts();
 
             // These are checkpoints, not a claim that the game rendered.
             boolean accepted = !frames.contains("ERROR code=CONTENT_INVALID")
@@ -194,7 +195,8 @@ final class GameBootProbe {
                     .append("emulator_run_marker=").append(reachedEmulator).append('\n')
                     .append("guest_running_event=").append(reachedGuest).append('\n')
                     .append("vortek_client_connections=").append(vortekConnections).append('\n')
-                    .append("vulkan_proxy_attached=").append(vortekConnections > 0).append('\n')
+                    .append("vortek_contexts_created=").append(vortekContexts).append('\n')
+                    .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)

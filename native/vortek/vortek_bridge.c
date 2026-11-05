@@ -48,6 +48,7 @@ struct Server {
     Connection* connections;
     bool stopping;
     int accepted;
+    int contexts_created;
 };
 
 typedef struct WindowBuffer {
@@ -88,6 +89,11 @@ static void* connection_thread(void* arg) {
                 context = Java_com_winlator_xenvironment_components_VortekRendererComponent_createVkContext(
                         env, server->component, conn->fd, server->options);
                 LOG("context_created=%d", context != 0);
+                if (context) {
+                    pthread_mutex_lock(&server->mutex);
+                    server->contexts_created++;
+                    pthread_mutex_unlock(&server->mutex);
+                }
                 if (!context || (*env)->ExceptionCheck(env)) break;
             } else if ((request >> 16) == 2 && context && length <= (128U * 1024U * 1024U)) {
                 if (!Java_com_winlator_xenvironment_components_VortekRendererComponent_handleExtraDataRequest(
@@ -222,6 +228,18 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeConnecte
     int accepted = server->accepted;
     pthread_mutex_unlock(&server->mutex);
     return accepted;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeCreatedContexts(
+        JNIEnv* env, jobject component, jlong ptr) {
+    (void)env; (void)component;
+    if (!ptr) return 0;
+    Server* server = (Server*)(uintptr_t)ptr;
+    pthread_mutex_lock(&server->mutex);
+    int created = server->contexts_created;
+    pthread_mutex_unlock(&server->mutex);
+    return created;
 }
 
 JNIEXPORT void JNICALL

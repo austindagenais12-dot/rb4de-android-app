@@ -162,7 +162,7 @@ jobs:
           git -C "$winlator_src" remote add origin https://github.com/JICA98/winlator-app.git
           git -C "$winlator_src" fetch -q --depth 1 --filter=blob:none origin "$winlator_rev"
           git -C "$winlator_src" sparse-checkout init --cone
-          git -C "$winlator_src" sparse-checkout set +            app/src/main/cpp/winlator app/src/main/cpp/libadrenotools
+          git -C "$winlator_src" sparse-checkout set app/src/main/cpp/winlator app/src/main/cpp/libadrenotools
           git -C "$winlator_src" checkout -q --detach FETCH_HEAD
           test "$(git -C "$winlator_src" rev-parse HEAD)" = "$winlator_rev"
           git init -q "$server_src"
@@ -170,11 +170,11 @@ jobs:
           git -C "$server_src" fetch -q --depth 1 --filter=blob:none origin "$server_rev"
           git -C "$server_src" checkout -q --detach FETCH_HEAD
           test "$(git -C "$server_src" rev-parse HEAD)" = "$server_rev"
-          cmake -S native/vortek -B "$build_dir" -G Ninja +            -DCMAKE_BUILD_TYPE=Release +            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" +            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 +            -DWINLATOR_SOURCE="$winlator_src" +            -DVORTEK_SERVER_SOURCE="$server_src"
-          cmake --build "$build_dir" +            --target winlator vortekrenderer rb4dx_vortek_bridge --parallel 4
-          install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" +            app/src/main/jniLibs/arm64-v8a/libwinlator.so
-          install -m 0755 "$(find "$build_dir" -name libvortekrenderer.so -print -quit)" +            app/src/main/jniLibs/arm64-v8a/libvortekrenderer.so
-          install -m 0755 "$(find "$build_dir" -name librb4dx_vortek_bridge.so -print -quit)" +            app/src/main/jniLibs/arm64-v8a/librb4dx_vortek_bridge.so
+          cmake -S native/vortek -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DWINLATOR_SOURCE="$winlator_src" -DVORTEK_SERVER_SOURCE="$server_src"
+          cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge --parallel 4
+          install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libwinlator.so
+          install -m 0755 "$(find "$build_dir" -name libvortekrenderer.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libvortekrenderer.so
+          install -m 0755 "$(find "$build_dir" -name librb4dx_vortek_bridge.so -print -quit)" app/src/main/jniLibs/arm64-v8a/librb4dx_vortek_bridge.so
           for lib in libwinlator.so libvortekrenderer.so librb4dx_vortek_bridge.so; do
             readelf -h "app/src/main/jniLibs/arm64-v8a/$lib" | grep -Eq 'Machine:.*AArch64'
           done

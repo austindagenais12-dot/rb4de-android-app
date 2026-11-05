@@ -49,6 +49,10 @@ public final class VortekRendererComponent implements AutoCloseable {
         return serverPtr == 0 ? 0 : nativeConnectedClients(serverPtr);
     }
 
+    public synchronized int createdContexts() {
+        return serverPtr == 0 ? 0 : nativeCreatedContexts(serverPtr);
+    }
+
     @Override
     public synchronized void close() {
         if (serverPtr != 0) {
@@ -83,6 +87,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native long startNativeServer(String path, Options options);
     private native void stopNativeServer(long ptr);
     private native int nativeConnectedClients(long ptr);
+    private native int nativeCreatedContexts(long ptr);
     private native long acquireNativeBuffer(int windowId, boolean preferBgra, int width, int height);
     private native void releaseNativeBuffers();
 }
