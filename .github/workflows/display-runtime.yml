@@ -1,0 +1,75 @@
+name: Build independent Android X11 engine
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/display-runtime.yml'
+      - 'scripts/build-rb4dx-x11.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rb4dx-android-display-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  x11-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install X11 host build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            bison patch ninja-build python3 cmake git binutils
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install pinned NDK
+        shell: bash
+        run: sdkmanager 'ndk;27.3.13750724'
+
+      - name: Restore pinned X11 source and build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            native-x11-source
+            native-x11-output/build
+          key: rb4dx-magicdesk-x11-702b1736-android34-v1
+
+      - name: Checkout independent embedded X11 engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d native-x11-source/.git ]]; then
+            mkdir -p native-x11-source
+            git -C native-x11-source init
+            git -C native-x11-source remote add origin https://github.com/mekhontsev/magicdesk-x11.git
+          fi
+          if ! git -C native-x11-source cat-file -e '702b1736ca2d32de2932f6be72c6b7506a0c0da5^{commit}' 2>/dev/null; then
+            git -C native-x11-source fetch --depth 1 origin 702b1736ca2d32de2932f6be72c6b7506a0c0da5
+          fi
+          git -C native-x11-source checkout --detach 702b1736ca2d32de2932f6be72c6b7506a0c0da5
+          git -C native-x11-source submodule update --init --recursive --depth 1 --jobs 4
+
+      - name: Compile ARM64 embedded server contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.3.13750724"
+          bash scripts/build-rb4dx-x11.sh native-x11-source native-x11-output
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rb4dx-android-x11-native-stage
+          path: native-x11-output/stage/
+          if-no-files-found: error
+          retention-days: 14
