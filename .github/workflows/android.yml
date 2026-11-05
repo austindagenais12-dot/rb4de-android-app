@@ -1,4 +1,4 @@
-name: Build Android ARM64 loader diagnostic APK
+name: Build Android native runtime bridge APK
 
 on:
   workflow_dispatch:
@@ -91,12 +91,12 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: ''
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;26.3.11579264' 'cmake;3.22.1'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-loader-diagnostics-debug
+          name: rb4dx-native-control-bridge-debug
           path: app/build/outputs/apk/debug/*.apk

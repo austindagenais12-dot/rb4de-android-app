@@ -1,7 +1,6 @@
 # RB4DX Standalone for Android
 
-**Status: stage 3 (importer plus verified Linux ARM64 runtime packaged in the
-Android diagnostic APK), not a playable emulator yet.**
+**Status: experimental Android control-channel bridge, not a playable emulator yet.**
 
 This is an independent, single-game Android project for running a legally owned
 PS4 copy of **Rock Band 4 (update 2.21)** with **Rock Band 4 Deluxe**. It does
@@ -22,15 +21,21 @@ It does not modify or share storage with Bachata S4.
   a real emulator backend is integrated and verified.
 * Automatically unpack the successfully built Linux ARM64 runtime into this
   app's private storage on first launch, verifying every file's SHA-256 against
-  the build manifest. This works without Shizuku or root. It does not launch
-  the Linux emulator yet.
-* The newer Android diagnostic APK uses the separate package ID
-  (dev.rb4dx.standalone.probe2) so it does not overwrite the previous importer
-  or the initial probe, preserving already imported Deluxe assets. A single
-  button compares plain glibc loader startup, loader startup with restartable
-  sequences disabled, FEXCore CPU execution, and linker startup tracing if
-  needed. The full diagnostic report can be copied in one tap. No game data
-  or Deluxe import is needed for these tests.
+  the build manifest. This works without Shizuku or root. The bridge probe can
+  now launch the Linux emulator for a controlled invalid-game startup test;
+  launching a real game is not supported yet.
+* Previous phone probes verified that the glibc loader, FEXCore CPU translation,
+  and the real shadPS4 command-line executable run under Android 16. The new
+  bridge-test APK uses `dev.rb4dx.standalone.bridge`, installing alongside the
+  original importer and older diagnostic apps so imported assets are preserved.
+* The new **Test native control channel** button binds a real Android filesystem
+  Unix-domain socket (JNI/NDK), starts shadPS4 with its upstream
+  `--bachata-socket` control-protocol option, and records the emulator's own
+  startup/error/shutdown messages. The probe supplies a deliberately missing
+  game file and expects `CONTENT_INVALID` and exit code 1. This expected error
+  counts as a **PASS only when the socket events are received**. No game or
+  Deluxe files are opened; no import is needed. **Copy bridge report** exports
+  the full diagnostic output for troubleshooting.
 
 The original RB4DX desktop directions also mention placing the plugin in
 `sce_module`; that is *not* enough on Android, and this app uses the open-source
@@ -38,16 +43,13 @@ core's dedicated custom-modules directory instead.
 
 ## What is still needed for an actual playable APK
 
-1. Build and integrate the [shadPS4 ARM64 core](https://github.com/zenithblue-oss/shadps4-arm64)
-   as the emulation backend. The upstream project is kept as an external source
-   dependency; we do not copy Bachata's Android frontend or APK.
-2. Integrate an ARM64-hosted guest x86-64 CPU translator (FEX or equivalent),
-   glibc host environment, Vulkan renderer, audio/input and Android lifecycle
-   bridge. A single-game focus does not remove these technical requirements.
-3. Bridge the Android document URI for the game directory to the native
+1. Integrate Android graphics/Vulkan surfaces, audio, controller input and a
+   full emulator lifecycle. The ARM64 core, FEX and startup control protocol
+   have preliminary Android tests, but game compatibility remains untested.
+2. Bridge the Android document URI for the game directory to the native
    filesystem used by the emulator without duplicating large game assets.
-4. Implement the emulator launch, on-screen controls and robust logs.
-5. Verify the Rock Band 4 executable, version, plugin loading, and Deluxe menus
+3. Implement real game launch, on-screen controls and robust logs.
+4. Verify the Rock Band 4 executable, version, plugin loading, and Deluxe menus
    on the user's Snapdragon S24 Ultra. This is experimental emulator work.
 
 The **Play** button is intentionally disabled until stage 2+ are implemented;
@@ -82,13 +84,15 @@ half-hour compiling it. Cache entries can expire or be evicted, so a future
 run may occasionally need to rebuild. The successful core is also attached to
 the run as a diagnostic artifact retained for seven days.
 
-The Android execution bridge, Vulkan surface transport and native game-directory
-mount are **not implemented yet**. See BACKEND_PLAN.md for remaining work.
+The Android control-channel bridge now has an experimental JNI socket
+implementation, but Vulkan surface transport and native game-directory mounts
+are **not implemented yet**. See BACKEND_PLAN.md for remaining work.
 Native shadPS4 compilation and Linux runtime packaging have succeeded in
-GitHub Actions. APK staging only verifies and extracts the runtime; it must
-not be mistaken for a working Play button or game compatibility.
+GitHub Actions. The diagnostic bridge is not a working Play button or evidence
+of game compatibility.
 
-Android package: `dev.rb4dx.standalone`, so it cannot overwrite Bachata.
+Android release package: `dev.rb4dx.standalone` (independent of Bachata).
+Current test build package: `dev.rb4dx.standalone.bridge`.
 
 ## Test the Deluxe archive installer on a PC
 

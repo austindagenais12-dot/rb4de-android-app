@@ -10,8 +10,11 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0-loader-diagnostics"
+        versionCode = 5
+        versionName = "0.5.0-control-bridge-probe"
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
@@ -19,8 +22,8 @@ android {
     // preserving the user's 598 MiB of separately imported Deluxe assets.
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".probe2"
-            manifestPlaceholders["appLabel"] = "RB4DX Loader Diagnostics"
+            applicationIdSuffix = ".bridge"
+            manifestPlaceholders["appLabel"] = "RB4DX Native Bridge Test"
         }
     }
 
@@ -36,5 +39,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    ndkVersion = "26.3.11579264"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 }

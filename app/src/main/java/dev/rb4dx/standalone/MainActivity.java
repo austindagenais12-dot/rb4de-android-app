@@ -47,12 +47,17 @@ public final class MainActivity extends Activity {
     private TextView detailStatus;
     private TextView runtimeStatus;
     private TextView probeStatus;
+    private TextView bridgeStatus;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
+    private Button bridgeButton;
+    private Button copyBridgeButton;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
+    private String lastBridgeReport;
     private boolean smokeRunning;
+    private boolean bridgeRunning;
     private String selectedTitleId;
     private boolean busy;
 
@@ -125,11 +130,25 @@ public final class MainActivity extends Activity {
         copyProbeButton.setOnClickListener(v -> copyProbeReport());
         addGap(body, 22);
 
-        addText(body, "5. Launch", 19, FG, true);
+        addText(body, "5. Android runtime control bridge", 19, FG, true);
+        addText(body,
+                "Connects to the real emulator's local control socket and checks startup and error events. "
+                        + "Uses a deliberately nonexistent game file; no game or mod files are touched.",
+                14, MUTED, false);
+        bridgeStatus = addText(body, "Preparing emulator files…", 13, MUTED, false);
+        bridgeButton = button(body, "Test native control channel");
+        bridgeButton.setEnabled(false);
+        bridgeButton.setOnClickListener(v -> runBridgeProbe());
+        copyBridgeButton = button(body, "Copy bridge report");
+        copyBridgeButton.setEnabled(false);
+        copyBridgeButton.setOnClickListener(v -> copyBridgeReport());
+        addGap(body, 22);
+
+        addText(body, "6. Launch", 19, FG, true);
         Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
-                "The ARM64 emulator now builds, but its Linux graphics, audio, and guest execution still need an Android bridge. Play remains disabled until that is tested.",
+                "The native control channel is an early milestone. Android graphics, audio, input and game-folder mounting still need integration. Play remains disabled until actual game launching works.",
                 14, MUTED, false);
         addGap(body, 16);
         addText(body,
@@ -161,11 +180,14 @@ public final class MainActivity extends Activity {
                             + (result.reused ? " (already prepared)" : " (installed)"));
                     probeStatus.setText("Ready for the FEXCore execution test.");
                     probeButton.setEnabled(true);
+                    bridgeStatus.setText("Ready for the native control-channel test.");
+                    bridgeButton.setEnabled(true);
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     runtimeStatus.setText("Native runtime not ready: " + error.getMessage());
                     probeStatus.setText("Cannot run the test until the runtime is ready.");
+                    bridgeStatus.setText("Cannot run the test until the runtime is ready.");
                 });
             }
         });
@@ -196,6 +218,33 @@ public final class MainActivity extends Activity {
         if (clipboard == null) return;
         clipboard.setPrimaryClip(ClipData.newPlainText("RB4DX ARM64 diagnostics", lastProbeReport));
         Toast.makeText(this, "Diagnostic report copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void runBridgeProbe() {
+        if (preparedRuntimeDirectory == null || bridgeRunning) return;
+        bridgeRunning = true;
+        bridgeButton.setEnabled(false);
+        bridgeStatus.setText("Opening Android Unix socket and starting the native emulator (up to 30 seconds)…");
+        Path runtimeDirectory = preparedRuntimeDirectory;
+        runtimeWorker.submit(() -> {
+            RuntimeBridgeProbe.Result result = RuntimeBridgeProbe.run(this, runtimeDirectory);
+            runOnUiThread(() -> {
+                bridgeRunning = false;
+                bridgeButton.setEnabled(true);
+                lastBridgeReport = result.report;
+                copyBridgeButton.setEnabled(true);
+                bridgeStatus.setText((result.succeeded ? "CONTROL CHANNEL PASS" : "CONTROL CHANNEL NOT YET WORKING")
+                        + "\n" + result.report.substring(0, Math.min(1800, result.report.length())));
+            });
+        });
+    }
+
+    private void copyBridgeReport() {
+        if (lastBridgeReport == null) return;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText("RB4DX control bridge", lastBridgeReport));
+        Toast.makeText(this, "Bridge report copied", Toast.LENGTH_SHORT).show();
     }
 
     private void chooseGameFolder() {

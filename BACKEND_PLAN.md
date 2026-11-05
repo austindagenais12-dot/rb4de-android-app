@@ -15,10 +15,10 @@ There is deliberately no placeholder fake emulation code in the Android app.
   architecture; must be built from permissible, reproducible sources.
 
 The `native-runtime.yml` workflow and `scripts/build-native-runtime.sh` have
-successfully produced the verified ARM64 Linux runtime. The Android runtime-stage
-APK bundles this output and checks every file while extracting it into private
-storage. This does not make the Linux binaries Android-loadable or executable;
-the native process, graphics and input bridge is still missing.
+successfully produced the verified ARM64 Linux runtime. The Android APK bundles
+this output, verifies every extracted file, and packages the glibc loader in
+Android's executable native-library directory. On-device FEXCore CPU and
+shadPS4 `--help` commands work. Android graphics and input remain unbridged.
 
 Do **not** reuse Bachata's modified/resigned APKs or its package name. Its
 Android frontend is not supplied in the public core repository. Using its
@@ -32,6 +32,11 @@ integrating the backend.
 - The app provisions the runtime without root or access to another app's data.
 - Every file is SHA-256 checked against its manifest; ZIP traversal and
   duplicate or missing entries are rejected.
+- ARM64 loader, FEXCore CPU and native shadPS4 CLI verified on the user's phone.
+- Experimental NDK `AF_UNIX` server receives shadPS4 lifecycle events when
+  the `--bachata-socket` upstream protocol flag is used. Its standalone probe
+  launches with an intentionally absent game file, expecting
+  `HELLO`, `Starting`, `ERROR CONTENT_INVALID`, then `Stopped`.
 - The Play button remains disabled until a real Android launch bridge works.
 
 ## First on-device CPU execution experiment
@@ -45,6 +50,18 @@ CPU test fails. Each step has a 12-second timeout and its own captured exit
 status and subprocess output, with a Copy Report button. This is a genuine CPU
 process execution experiment, not PS4 game emulation. A successful smoke run
 does not establish Vulkan graphics, game-directory access, or RB4DX support.
+
+## Native control-channel experiment
+
+The current Android `.bridge` debug app adds `librb4dx_bridge.so`, implemented
+independently with NDK JNI. A native filesystem Unix-domain socket listens in
+this app's own private files directory while the verified glibc loader launches
+the shadPS4 ARM64 executable. It deliberately passes a nonexistent eboot path.
+The expected exit code 1 is only accepted as a successful connection test if
+all four lifecycle messages arrive through the socket. A separate **Copy bridge
+report** button gathers these results. It does not open Rock Band 4 or the mod.
+The protocol option retains its upstream `--bachata-socket` spelling; this
+does not use the Bachata Android APK or another application's storage.
 
 ## Minimum backend contract
 
