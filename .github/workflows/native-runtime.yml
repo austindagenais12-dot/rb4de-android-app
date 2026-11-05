@@ -9,6 +9,7 @@ on:
       - 'scripts/build-native-runtime.sh'
       - 'scripts/verify-native-runtime.py'
       - 'native/patches/rb4dx-sanitizer-hooks.patch'
+      - 'native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch'
 
 # Automatically replace a stale in-flight build when a fix is pushed.
 concurrency:
@@ -48,6 +49,17 @@ jobs:
           grep -n 'sceKernelGetSanitizerMallocReplaceExternal' \
             native-source/src/core/libraries/kernel/kernel.cpp
 
+      - name: Avoid null Vulkan vertex dispatch calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Vortek can expose the dynamic vertex-input extension without its
+          # vkCmdSetVertexInputEXT pointer. Fall back to static vertex inputs.
+          git -C native-source apply --check ../native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch
+          git -C native-source apply ../native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch
+          grep -n 'vkCmdSetVertexInputEXT is unavailable' \
+            native-source/src/video_core/renderer_vulkan/vk_instance.cpp
+
       # This cache holds only the completed ARM64 binaries. We save it BEFORE
       # the Vulkan translator / packaging steps, so later errors cannot waste
       # another full native compilation.
@@ -55,7 +67,7 @@ jobs:
         id: core_cache
         uses: actions/cache/restore@v4
         with:
-          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v2-rb4dx-sanitizer
+          key: rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v3-rb4dx-sanitizer-vertex
           path: |
             native-source/runtime/build/shadps4-arm64-stage
             native-source/runtime/build/fexcore-smoke-stage
