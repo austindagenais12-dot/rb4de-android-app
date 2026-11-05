@@ -9,11 +9,13 @@ import android.view.SurfaceHolder;
 import com.winlator.xenvironment.components.VortekRendererComponent;
 
 import java.io.File;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -26,7 +28,8 @@ import java.util.concurrent.TimeUnit;
  */
 final class GameBootProbe {
     private static final int TIMEOUT_MS = 18000;
-    private static final int MAX_LOG_BYTES = 32 * 1024;
+    private static final int MAX_LOG_BYTES = 16 * 1024;
+    private static final int MAX_CRASH_LINES = 48;
 
     static final class Result {
         final String report;
@@ -161,6 +164,10 @@ final class GameBootProbe {
             builder.environment().put("VK_LOADER_DEBUG", "error,warn,driver");
             builder.environment().put("BACHATA_VORTEK_LOG_LEVEL", "2");
             builder.environment().put("BACHATA_VORTEK_SOCKET", vortekSocket.toString());
+            // The pinned ARM64 emulator already contains an async-signal-safe
+            // crash reporter. Capture PC/LR, register state and module maps
+            // if the GPU communication thread jumps through a null pointer.
+            builder.environment().put("BACHATA_CRASH_REGISTERS", "1");
             // The Debian libX11/libxcb client uses /tmp/.X11-unix/Xn, whereas
             // the embedded Android server must bind inside its private TMPDIR.
             // Translate only this session's display socket at connect(2).
@@ -185,6 +192,7 @@ final class GameBootProbe {
             int exit = completed ? process.exitValue() : -1;
             String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
             String emulatorLog = tail(capture);
+            String crashDiagnostics = crashDiagnostics(capture);
             int vortekConnections = vortek.connectedClients();
             int vortekContexts = vortek.createdContexts();
             int vortekHandshakesOk = vortek.handshakesOk();
@@ -220,8 +228,10 @@ final class GameBootProbe {
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
                     .append("android_surface_attached=false\n")
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
+                    .append("crash_register_capture_enabled=true\n")
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append("\nSOCKET_FRAMES:\n").append(frames)
+                    .append("\nCRASH_DIAGNOSTICS:\n").append(crashDiagnostics)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
                     .append("\nnote=This is a startup probe; an optional still-frame preview is not live gameplay or a Deluxe launch.\n");
             return new Result("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report);
@@ -257,5 +267,42 @@ final class GameBootProbe {
             return (size > count ? "[Earlier output omitted]\n" : "")
                     + new String(bytes, StandardCharsets.UTF_8);
         }
+    }
+
+    /**
+     * Keep the last crash signatures, reporter registers, and relevant module
+     * mappings independently of the bounded log tail. Rapid controller
+     * polling can otherwise bury the actual fault in thousands of log lines.
+     */
+    private static String crashDiagnostics(File file) throws IOException {
+        ArrayDeque<String> lines = new ArrayDeque<>();
+        boolean inMappings = false;
+        try (BufferedReader reader = Files.newBufferedReader(file.toPath(),
+                StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.contains("[Bachata.Crash] maps begin")) {
+                    inMappings = true;
+                } else if (line.contains("[Bachata.Crash] maps end")) {
+                    inMappings = false;
+                }
+                boolean relevantMapping = inMappings
+                        && (line.contains("shadps4-arm64-fex")
+                                || line.contains("libvulkan_vortek")
+                                || line.contains("libvulkan.so"));
+                if (!line.contains("[Bachata.Crash]")
+                        && !line.contains("[Bachata.Symbols]")
+                        && !line.contains("Unhandled access violation")
+                        && !line.contains("FEX HLE call")
+                        && !line.contains("<Critical>")
+                        && !relevantMapping) {
+                    continue;
+                }
+                lines.addLast(line);
+                if (lines.size() > MAX_CRASH_LINES) lines.removeFirst();
+            }
+        }
+        return lines.isEmpty() ? "No native crash signature captured\n"
+                : String.join("\n", lines) + "\n";
     }
 }
