@@ -14,15 +14,25 @@ There is deliberately no placeholder fake emulation code in the Android app.
 - Linux/glibc runtime and graphics/audio/input bridge: needed by this upstream
   architecture; must be built from permissible, reproducible sources.
 
-The `native-runtime.yml` workflow and `scripts/build-native-runtime.sh` now
-provide the pinned core build procedure and integrity checks. They have not
-yet produced an Android-loadable backend. This separates cross-build failures
-from the later Android process/graphics integration work.
+The `native-runtime.yml` workflow and `scripts/build-native-runtime.sh` have
+successfully produced the verified ARM64 Linux runtime. The Android runtime-stage
+APK bundles this output and checks every file while extracting it into private
+storage. This does not make the Linux binaries Android-loadable or executable;
+the native process, graphics and input bridge is still missing.
 
 Do **not** reuse Bachata's modified/resigned APKs or its package name. Its
 Android frontend is not supplied in the public core repository. Using its
 prebuilt runtime blindly is not a reliable replacement for building and
 integrating the backend.
+
+## Completed integration milestone
+
+- GitHub Actions builds and caches the ARM64 shadPS4/FEX and Vortek runtime.
+- The Android workflow fetches the latest successful runtime automatically.
+- The app provisions the runtime without root or access to another app's data.
+- Every file is SHA-256 checked against its manifest; ZIP traversal and
+  duplicate or missing entries are rejected.
+- The Play button remains disabled until a real Android launch bridge works.
 
 ## Minimum backend contract
 

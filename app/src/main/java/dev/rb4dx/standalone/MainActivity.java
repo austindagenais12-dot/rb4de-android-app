@@ -37,10 +37,12 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(87, 115, 235);
 
     private final ExecutorService importer = Executors.newSingleThreadExecutor();
+    private final ExecutorService runtimeWorker = Executors.newSingleThreadExecutor();
     private SharedPreferences preferences;
     private TextView gameStatus;
     private TextView modStatus;
     private TextView detailStatus;
+    private TextView runtimeStatus;
     private Button importButton;
     private String selectedTitleId;
     private boolean busy;
@@ -96,11 +98,18 @@ public final class MainActivity extends Activity {
         detailStatus = addText(body, "", 13, MUTED, false);
         addGap(body, 26);
 
-        addText(body, "4. Launch", 19, FG, true);
-        Button play = button(body, "PLAY • emulator core not connected");
+        addText(body, "4. Native emulator runtime", 19, FG, true);
+        runtimeStatus = addText(body, "Checking bundled ARM64 runtime…", 14, MUTED, false);
+        addText(body,
+                "The runtime is installed and verified automatically in this test build. No root or Shizuku is needed.",
+                14, MUTED, false);
+        addGap(body, 22);
+
+        addText(body, "5. Launch", 19, FG, true);
+        Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
-                "This first build imports the game/mod configuration only. A separate native shadPS4/FEX backend is still required before Play can be enabled.",
+                "The ARM64 emulator now builds, but its Linux graphics, audio, and guest execution still need an Android bridge. Play remains disabled until that is tested.",
                 14, MUTED, false);
         addGap(body, 16);
         addText(body,
@@ -109,6 +118,31 @@ public final class MainActivity extends Activity {
 
         setContentView(scroll);
         refreshStatus();
+        prepareNativeRuntime();
+    }
+
+    private void prepareNativeRuntime() {
+        runtimeWorker.submit(() -> {
+            try {
+                final long[] lastProgress = {0};
+                RuntimeProvisioner.Result result = RuntimeProvisioner.prepare(
+                        getAssets(), getFilesDir().toPath(), (bytes, total) -> {
+                            if (bytes - lastProgress[0] >= 8 * 1024 * 1024 || bytes == total) {
+                                lastProgress[0] = bytes;
+                                runOnUiThread(() -> runtimeStatus.setText(
+                                        "Verifying ARM64 files: " + (bytes / (1024 * 1024))
+                                        + " / " + (total / (1024 * 1024)) + " MiB"));
+                            }
+                        });
+                runOnUiThread(() -> runtimeStatus.setText(
+                        "ARM64 runtime verified • " + result.version
+                        + " • " + result.files + " files"
+                        + (result.reused ? " (already prepared)" : " (installed)")));
+            } catch (Exception error) {
+                runOnUiThread(() -> runtimeStatus.setText(
+                        "Native runtime not ready: " + error.getMessage()));
+            }
+        });
     }
 
     private void chooseGameFolder() {

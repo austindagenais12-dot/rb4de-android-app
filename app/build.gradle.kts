@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-importer"
+        versionCode = 2
+        versionName = "0.2.0-runtime-stage"
     }
 
     compileOptions {

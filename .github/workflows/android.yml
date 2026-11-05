@@ -1,19 +1,74 @@
-name: Build Android importer
+name: Build Android runtime-stage APK
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Build ARM64 emulator runtime (experimental)']
+    types: [completed]
   push:
+    branches: [main]
     paths:
       - 'app/**'
       - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/android.yml'
+      - 'scripts/verify-native-runtime.py'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: android-runtime-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Pull only a successful, integrity-verified native package. The APK is
+      # self-contained; users do not need to copy GitHub ZIPs onto Android.
+      - name: Find successful native runtime build
+        id: native_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            run_id="${{ github.event.workflow_run.id }}"
+          else
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          fi
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "No successful native runtime available" >&2
+            exit 1
+          fi
+          echo "id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Using native runtime from GitHub Actions run $run_id"
+
+      - name: Download verified Linux ARM64 runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: rb4dx-arm64-linux-runtime
+          run-id: ${{ steps.native_run.outputs.id }}
+          github-token: ${{ github.token }}
+          path: native-runtime-artifact
+
+      - name: Verify and stage runtime assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-native-runtime.py \
+            native-runtime-artifact/runtime.zip \
+            native-runtime-artifact/manifest.json
+          mkdir -p app/src/main/assets/runtime
+          cp native-runtime-artifact/runtime.zip app/src/main/assets/runtime/runtime.zip
+          cp native-runtime-artifact/manifest.json app/src/main/assets/runtime/manifest.json
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -28,5 +83,5 @@ jobs:
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-standalone-importer-debug
+          name: rb4dx-runtime-stage-debug
           path: app/build/outputs/apk/debug/*.apk
