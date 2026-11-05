@@ -8,6 +8,9 @@ if(NOT DEFINED WINLATOR_SOURCE OR NOT DEFINED VORTEK_SERVER_SOURCE)
 endif()
 
 set(WINLATOR_NATIVE "${WINLATOR_SOURCE}/app/src/main/cpp")
+# The pinned upstream time_utils.h calls POSIX time functions without
+# including <time.h>; supply it for the imported native translation units.
+add_compile_options(-include time.h)
 include_directories(
   "${WINLATOR_NATIVE}/winlator/include"
   "${WINLATOR_NATIVE}/libadrenotools/include")
