@@ -1,0 +1,41 @@
+diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -584,6 +584,20 @@ bool Instance::CreateDevice() {
+     device = std::move(dev);
+ 
+     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
++    // Some proxied Vulkan ICDs advertise vertex-input dynamic state yet return
++    // a null dispatch pointer for vkCmdSetVertexInputEXT. The next draw would
++    // then branch to address zero from BufferCache::BindVertexBuffers.
++    // Treat the extension as unusable for pipeline setup and draw recording.
++    if (vertex_input_dynamic_state &&
++        VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdSetVertexInputEXT == nullptr) {
++        LOG_WARNING(Render_Vulkan,
++                    "vkCmdSetVertexInputEXT is unavailable despite extension support; "
++                    "using static vertex input instead");
++        vertex_input_dynamic_state = false;
++    }
++    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBindVertexBuffers2 == nullptr) {
++        LOG_WARNING(Render_Vulkan, "vkCmdBindVertexBuffers2 unavailable; using core binding");
++    }
+ 
+ 
+     // ── Vulkan 1.3 dispatch audit ─────────────────────────────────────────────
+diff --git a/src/video_core/buffer_cache/buffer_cache.cpp b/src/video_core/buffer_cache/buffer_cache.cpp
+--- a/src/video_core/buffer_cache/buffer_cache.cpp
++++ b/src/video_core/buffer_cache/buffer_cache.cpp
+@@ -249,8 +249,12 @@ void BufferCache::BindVertexBuffers(const Vulkan::GraphicsPipeline& pipeline) {
+     // fetch-shader stream has stride zero.
+     const auto bind_path =
+         SelectVertexBufferBindPath(instance.IsVertexInputDynamicState());
+-    if (bind_path == VertexBufferBindPath::Core) {
++    // A proxied driver may omit vkCmdBindVertexBuffers2 even when reporting
++    // Vulkan 1.3 support; avoid dereferencing a null dispatch function.
++    const bool bind2_available =
++        VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBindVertexBuffers2 != nullptr;
++    if (bind_path == VertexBufferBindPath::Core || !bind2_available) {
+         cmdbuf.bindVertexBuffers(0, num_buffers, host_buffers.data(), host_offsets.data());
+     } else {
+         cmdbuf.bindVertexBuffers2(0, num_buffers, host_buffers.data(), host_offsets.data(),
+                                   host_sizes.data(), host_strides.data());
