@@ -18,8 +18,8 @@ android {
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Install this Turnip test alongside the previous .linuxvk app so existing
-    // private runtime, save data, and app settings remain untouched.
+    // Keep the v0.12.11 frame-index probe isolated from the working v0.12.10
+    // Turnip app (dev.rb4dx.standalone.linuxvk.turnip), including private data.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
@@ -30,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk.turnip"
-            manifestPlaceholders["appLabel"] = "RB4DX Turnip Test"
+            applicationIdSuffix = ".linuxvk.turnip.frameprobe"
+            manifestPlaceholders["appLabel"] = "RB4DX Frame Probe"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }
