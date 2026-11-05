@@ -49,16 +49,26 @@ GitHub Actions workflow `.github/workflows/android.yml` runs the same build.
 
 ## Build the open-source ARM64 backend separately
 
-The manual `.github/workflows/native-runtime.yml` workflow downloads the public
+The `.github/workflows/native-runtime.yml` workflow downloads the public
 `zenithblue-oss/shadps4-arm64` source at a pinned revision. It uses the
 upstream FEX/shadPS4 and Debian/Vortek build scripts, then verifies and exports
 `runtime.zip` and `manifest.json` as a separate CI artifact. The output is a
 **Linux ARM64 runtime bundle**, not an Android app or runnable APK.
 
+The native workflow starts automatically when its build scripts or workflow
+change on `main`, and it can also be started manually from GitHub Actions. A
+new fix cancels an older build on the same branch. Before compiling, CI checks
+the compiler and Vulkan development headers. The completed ARM64 emulator and
+FEXCore stage is cached *before* Vortek and packaging run. If a later step
+fails, the next run can reuse the compiled core instead of spending another
+half-hour compiling it. Cache entries can expire or be evicted, so a future
+run may occasionally need to rebuild. The successful core is also attached to
+the run as a diagnostic artifact retained for seven days.
+
 The platform bridge, Vulkan surface transport and native game-directory mount
 are **not implemented yet**. See `BACKEND_PLAN.md` for the precise remaining
-work. The workflow is checked for shell syntax but has not completed a real
-native cross-build in this workspace.
+work. Native shadPS4 compilation has succeeded in GitHub Actions; packaging
+and Android integration are still experimental and unverified.
 
 Android package: `dev.rb4dx.standalone`, so it cannot overwrite Bachata.
 
