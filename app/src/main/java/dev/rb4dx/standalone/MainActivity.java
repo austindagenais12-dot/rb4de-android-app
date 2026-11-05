@@ -240,7 +240,7 @@ public final class MainActivity extends Activity {
         vulkanStatus = addText(body, "Waiting for the Android display surface…",
                 13, MUTED, false);
         vulkanSurface = new SurfaceView(this);
-        LinearLayout.LayoutParams surfaceParams = new LinearLayout.LayoutParams(-1, dp(100));
+        LinearLayout.LayoutParams surfaceParams = new LinearLayout.LayoutParams(-1, dp(210));
         surfaceParams.topMargin = dp(12);
         body.addView(vulkanSurface, surfaceParams);
         vulkanButton = button(body, "Test Vulkan surface and GPU");
@@ -288,8 +288,10 @@ public final class MainActivity extends Activity {
                 "Starts the actual shadPS4 emulator on your selected vanilla Rock Band 4 "
                         + "eboot.bin for at most 18 seconds, then stops it. It checks the "
                         + "game version automatically and records the startup stage, "
-                        + "socket messages and emulator errors. This does NOT launch Deluxe "
-                        + "or display PS4 graphics. It may temporarily use substantial RAM.",
+                        + "socket messages and emulator errors. If the GPU produced a window "
+                        + "buffer, a still-frame preview may appear in the display above after "
+                        + "the process exits. It does NOT launch Deluxe or provide live gameplay. "
+                        + "It may temporarily use substantial RAM.",
                 14, MUTED, false);
         gameBootStatus = addText(body,
                 "Waiting for the verified native runtime, game folder and All files access…",
@@ -475,7 +477,8 @@ public final class MainActivity extends Activity {
         String title = selectedTitleId;
         Uri gameUri = Uri.parse(saved);
         runtimeWorker.submit(() -> {
-            GameBootProbe.Result result = GameBootProbe.run(this, runtime, gameUri, title);
+            GameBootProbe.Result result = GameBootProbe.run(this, runtime, gameUri,
+                    title, vulkanSurface.getHolder());
             runOnUiThread(() -> {
                 gameBootRunning = false;
                 lastGameBootReport = result.report;

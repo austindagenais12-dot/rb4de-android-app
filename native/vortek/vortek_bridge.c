@@ -4,6 +4,7 @@
 #define _GNU_SOURCE
 #include <jni.h>
 #include <android/hardware_buffer.h>
+#include <android/hardware_buffer_jni.h>
 #include <android/log.h>
 #include <errno.h>
 #include <pthread.h>
@@ -380,6 +381,26 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_acquireNativeB
                 .id = window_id, .width = width, .height = height, .buffer = buffer
             };
             result = (jlong)(uintptr_t)buffer;
+        }
+    }
+    pthread_mutex_unlock(&buffer_mutex);
+    return result;
+}
+
+// Convert a retained, app-owned AHardwareBuffer to a Java reference. The
+// Vulkan request threads have to be stopped before calling this method for
+// diagnostic display, otherwise the producer may modify the buffer while
+// Android's hardware canvas is sampling it.
+JNIEXPORT jobject JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_getNativeHardwareBuffer(
+        JNIEnv* env, jobject component, jint window_id) {
+    (void)component;
+    jobject result = NULL;
+    pthread_mutex_lock(&buffer_mutex);
+    for (int i = 0; i < MAX_WINDOWS; ++i) {
+        if (buffers[i].buffer && buffers[i].id == window_id) {
+            result = AHardwareBuffer_toHardwareBuffer(env, buffers[i].buffer);
+            break;
         }
     }
     pthread_mutex_unlock(&buffer_mutex);

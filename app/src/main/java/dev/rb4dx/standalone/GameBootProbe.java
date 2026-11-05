@@ -4,6 +4,7 @@ package dev.rb4dx.standalone;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Environment;
+import android.view.SurfaceHolder;
 
 import com.winlator.xenvironment.components.VortekRendererComponent;
 
@@ -38,7 +39,7 @@ final class GameBootProbe {
     private GameBootProbe() {}
 
     static Result run(Context context, Path runtimeDirectory, Uri gameTree,
-            String expectedTitle) {
+            String expectedTitle, SurfaceHolder previewSurface) {
         StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V2\n")
                 .append("mode=REAL_SHADPS4_EMBEDDED_X11_STARTUP\n")
                 .append("max_runtime_ms=").append(TIMEOUT_MS).append('\n');
@@ -97,7 +98,6 @@ final class GameBootProbe {
                 .append("app_data_only=true\n")
                 .append("deluxe_plugin_requested=false\n")
                 .append("game_patch_loading=false\n")
-                .append("android_surface_attached=false\n")
                 .append("vulkan_icd_file=").append(vulkanDriverFile).append('\n');
 
         int serverFd = -1;
@@ -124,8 +124,9 @@ final class GameBootProbe {
             // The glibc Vortek client communicates with a separate Android
             // Vulkan server using a Unix socket and shared-memory FDs. Keep
             // the endpoint app-private and tied to this one launch session.
-            // Its swapchain still lacks Android on-screen presentation.
-            vortek = new VortekRendererComponent(context);
+            // Preview is only taken when the producer is fully stopped.
+            // The embedded X11 window is not yet connected to a live surface.
+            vortek = new VortekRendererComponent(context, previewSurface);
             if (!vortek.start(vortekSocket.toString())) {
                 return failed(report, "Unable to start Android Vortek Vulkan transport server");
             }
@@ -188,13 +189,18 @@ final class GameBootProbe {
             int vortekContexts = vortek.createdContexts();
             int vortekHandshakesOk = vortek.handshakesOk();
             int vortekHandshakesFailed = vortek.handshakesFailed();
+            int windowUpdateCount = vortek.windowUpdateCount();
+            boolean finalFramePosted = vortek.stopAndRenderFinalFrame();
 
             // These are checkpoints, not a claim that the game rendered.
             boolean accepted = !frames.contains("ERROR code=CONTENT_INVALID")
                     && !emulatorLog.contains("Invalid PS4 executable");
-            boolean reachedEmulator = emulatorLog.contains("Starting shadps4 emulator")
-                    || emulatorLog.contains("Game id:");
             boolean reachedGuest = frames.contains("BACHATA/1 EVENT Running");
+            // The log is capped to 32 KB, so the initial Run marker is often
+            // omitted after many guest symbol resolution warnings.
+            boolean reachedEmulator = reachedGuest
+                    || emulatorLog.contains("Starting shadps4 emulator")
+                    || emulatorLog.contains("Game id:");
             String checkpoint = !accepted ? "CONTENT_REJECTED"
                     : reachedGuest ? "GUEST_RUNNING_EVENT"
                     : reachedEmulator ? "EMULATOR_RUN_REACHED"
@@ -211,10 +217,13 @@ final class GameBootProbe {
                     .append("vortek_handshakes_failed=").append(vortekHandshakesFailed).append('\n')
                     .append("vortek_contexts_created=").append(vortekContexts).append('\n')
                     .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
+                    .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
+                    .append("android_surface_attached=false\n")
+                    .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
-                    .append("\nnote=This is not a successful PS4 game boot or Deluxe launch.\n");
+                    .append("\nnote=This is a startup probe; an optional still-frame preview is not live gameplay or a Deluxe launch.\n");
             return new Result("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report);
         } catch (Throwable error) {
             return failed(report, error.getClass().getSimpleName() + ": " + error.getMessage());

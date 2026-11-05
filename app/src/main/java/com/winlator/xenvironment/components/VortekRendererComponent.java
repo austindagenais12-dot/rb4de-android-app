@@ -2,19 +2,33 @@
 package com.winlator.xenvironment.components;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.hardware.HardwareBuffer;
 import android.util.DisplayMetrics;
+import android.view.Surface;
+import android.view.SurfaceHolder;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Standalone app-private Android endpoint for the pinned Vortek protocol.
  *
  * The JNI names are intentionally compatible with the upstream Vortek
- * renderer. This is an actual Vulkan command server, but Android screen
- * presentation / X11 window tracking has NOT been connected yet.
+ * renderer. This is an actual Vulkan command server. Its first Android
+ * screen-output milestone is an end-of-probe still-frame preview, after
+ * the Vulkan producer has stopped. Continuous screen output is not ready.
  */
 public final class VortekRendererComponent implements AutoCloseable {
     private final Options options = new Options();
     private final int width;
     private final int height;
+    private final SurfaceHolder previewHolder;
+    private final AtomicInteger lastUpdatedWindow = new AtomicInteger(Integer.MIN_VALUE);
+    private final AtomicInteger windowUpdates = new AtomicInteger();
     private long serverPtr;
 
     static {
@@ -32,11 +46,54 @@ public final class VortekRendererComponent implements AutoCloseable {
         public String[] exposedDeviceExtensions = null;
     }
 
-    public VortekRendererComponent(Context context) {
+    public VortekRendererComponent(Context context, SurfaceHolder holder) {
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         width = Math.max(1, metrics.widthPixels);
         height = Math.max(1, metrics.heightPixels);
+        previewHolder = holder;
         initVulkanWrapper(context.getApplicationInfo().nativeLibraryDir, null);
+    }
+
+    public int windowUpdateCount() { return windowUpdates.get(); }
+
+    /**
+     * Diagnostic only. The producer must be stopped before hardware buffers
+     * are sampled by Android's canvas: sampling while Vulkan is writing into
+     * the same shared buffer would be undefined behavior.
+     */
+    public synchronized boolean stopAndRenderFinalFrame() {
+        if (serverPtr != 0) {
+            stopNativeServer(serverPtr);
+            serverPtr = 0;
+        }
+        if (previewHolder == null || lastUpdatedWindow.get() == Integer.MIN_VALUE) {
+            return false;
+        }
+        Surface surface = previewHolder.getSurface();
+        if (surface == null || !surface.isValid()) return false;
+
+        HardwareBuffer buffer = getNativeHardwareBuffer(lastUpdatedWindow.get());
+        if (buffer == null) return false;
+        Bitmap bitmap = null;
+        try {
+            bitmap = Bitmap.wrapHardwareBuffer(buffer, null);
+            if (bitmap == null) return false;
+            Canvas canvas = surface.lockHardwareCanvas();
+            try {
+                canvas.drawColor(Color.BLACK);
+                Rect bounds = new Rect(0, 0, canvas.getWidth(), canvas.getHeight());
+                Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+                canvas.drawBitmap(bitmap, null, bounds, paint);
+            } finally {
+                surface.unlockCanvasAndPost(canvas);
+            }
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        } finally {
+            if (bitmap != null) bitmap.recycle();
+            buffer.close();
+        }
     }
 
     public synchronized boolean start(String privateSocketPath) {
@@ -83,9 +140,13 @@ public final class VortekRendererComponent implements AutoCloseable {
         return acquireNativeBuffer(windowId, preferBgra, width, height);
     }
 
-    // Native GPU images are not yet composited to an Android Surface.
+    // Called by the upstream renderer after a window's GPU content changes.
+    // Keep a thread-safe window ID for a still-frame preview at probe exit.
     @SuppressWarnings("unused")
-    private void updateWindowContent(int windowId) {}
+    private void updateWindowContent(int windowId) {
+        lastUpdatedWindow.set(windowId);
+        windowUpdates.incrementAndGet();
+    }
 
     private native long createVkContext(int clientFd, Options options);
     private native void destroyVkContext(long contextPtr);
@@ -99,5 +160,6 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native int nativeHandshakesOk(long ptr);
     private native int nativeHandshakesFailed(long ptr);
     private native long acquireNativeBuffer(int windowId, boolean preferBgra, int width, int height);
+    private native HardwareBuffer getNativeHardwareBuffer(int windowId);
     private native void releaseNativeBuffers();
 }
