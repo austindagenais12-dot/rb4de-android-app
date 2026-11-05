@@ -1,0 +1,4 @@
+tests/build/
+app/build/
+.gradle/
+.ci-signing/

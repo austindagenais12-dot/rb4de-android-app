@@ -21,6 +21,7 @@ def run_validator(tmp: Path, corrupt: bool = False) -> subprocess.CompletedProce
         "host/ld-linux-aarch64.so.1": b"ARM64 loader placeholder",
         "host/fexcore-smoke": b"FEXCore placeholder",
         "host/lib/libvulkan_vortek.so": b"Vortek placeholder",
+        "usr/share/X11/xkb/keycodes/evdev": b"X11 evdev keycodes placeholder",
     }
     archive = tmp / "runtime.zip"
     manifest = tmp / "manifest.json"

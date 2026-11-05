@@ -247,6 +247,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Run JVM and runtime-verifier regression tests
+        run: bash tests/run.sh
       - run: gradle :app:assembleDebug --no-daemon
       - name: Verify native startup and Vulkan libraries are packaged
         shell: bash
@@ -254,12 +256,18 @@ jobs:
           set -euo pipefail
           apk=app/build/outputs/apk/debug/app-debug.apk
           test -s "$apk"
+          unzip -t "$apk" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip' versionCode='15' versionName='0.12.9-gpu-diagnostics'"
+          unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
               librb4dx_vortek_bridge.so libvulkan_freedreno.so \
               libhook_impl.so libmain_hook.so; do
             unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$name"
           done
+          sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
           name: rb4dx-x11-window-startup-debug

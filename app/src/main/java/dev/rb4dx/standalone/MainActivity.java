@@ -27,6 +27,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.InputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +38,7 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int PICK_GAME = 100;
     private static final int PICK_DELUXE = 101;
+    private static final int EXPORT_GAME_LOG = 102;
     private static final String PREFS = "rb4dx";
     private static final String GAME_URI = "game_tree_uri";
     private static final String TITLE_ID = "title_id";
@@ -82,6 +85,7 @@ public final class MainActivity extends Activity {
     private Button copyVulkanFrameButton;
     private Button gameBootButton;
     private Button copyGameBootButton;
+    private Button exportGameBootLogButton;
     private SurfaceView vulkanSurface;
     private Path preparedRuntimeDirectory;
     private String lastProbeReport;
@@ -92,6 +96,7 @@ public final class MainActivity extends Activity {
     private String lastGlibcFileReport;
     private String lastVulkanFrameReport;
     private String lastGameBootReport;
+    private Path lastGameBootFullLog;
     private boolean smokeRunning;
     private boolean bridgeRunning;
     private boolean gamePreflightRunning;
@@ -338,6 +343,9 @@ public final class MainActivity extends Activity {
         copyGameBootButton.setEnabled(false);
         copyGameBootButton.setOnClickListener(
                 v -> copyReport("RB4DX real game startup", lastGameBootReport));
+        exportGameBootLogButton = button(body, "Export complete startup log (.log)");
+        exportGameBootLogButton.setEnabled(false);
+        exportGameBootLogButton.setOnClickListener(v -> exportGameBootLog());
         addGap(body, 22);
 
         addText(body, "10. Play", 19, FG, true);
@@ -508,6 +516,7 @@ public final class MainActivity extends Activity {
         if (saved == null) return;
         gameBootRunning = true;
         gameBootButton.setEnabled(false);
+        exportGameBootLogButton.setEnabled(false);
         gameBootStatus.setText("Starting real shadPS4 with Rock Band 4; safety timeout 18 seconds…");
         Path runtime = preparedRuntimeDirectory;
         String title = selectedTitleId;
@@ -518,7 +527,10 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 gameBootRunning = false;
                 lastGameBootReport = result.report;
+                lastGameBootFullLog = result.fullLog;
                 copyGameBootButton.setEnabled(true);
+                exportGameBootLogButton.setEnabled(result.fullLog != null
+                        && Files.isRegularFile(result.fullLog));
                 refreshNativeAccessStatus();
                 gameBootStatus.setText(result.report.substring(0,
                         Math.min(1900, result.report.length())));
@@ -676,6 +688,22 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, "Report copied", Toast.LENGTH_SHORT).show();
     }
 
+    private void exportGameBootLog() {
+        if (lastGameBootFullLog == null || !Files.isRegularFile(lastGameBootFullLog)) {
+            Toast.makeText(this, "No complete startup log to export yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "RB4DX-Startup-v0.12.9.log");
+        try {
+            startActivityForResult(intent, EXPORT_GAME_LOG);
+        } catch (ActivityNotFoundException error) {
+            Toast.makeText(this, "No document picker available", Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void chooseGameFolder() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -697,6 +725,23 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+        if (requestCode == EXPORT_GAME_LOG) {
+            Path logPath = lastGameBootFullLog;
+            if (logPath == null) return;
+            runtimeWorker.submit(() -> {
+                try (OutputStream output = getContentResolver().openOutputStream(uri, "w")) {
+                    if (output == null) throw new IOException("Document provider returned no stream");
+                    long copied = StartupLogStore.copyTo(logPath, output);
+                    runOnUiThread(() -> Toast.makeText(this,
+                            "Startup log saved (" + copied + " bytes)", Toast.LENGTH_LONG).show());
+                } catch (Exception error) {
+                    runOnUiThread(() -> Toast.makeText(this,
+                            "Log export failed: " + error.getClass().getSimpleName(),
+                            Toast.LENGTH_LONG).show());
+                }
+            });
+            return;
+        }
         if (requestCode == PICK_GAME) {
             try {
                 if (!containsEboot(uri)) {

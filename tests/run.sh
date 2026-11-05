@@ -6,6 +6,10 @@ mkdir -p "$build_dir"
 sources=(
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/DeluxeInstaller.java"
   "$project_dir/tests/InstallerSmokeTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/StartupLogStore.java"
+  "$project_dir/tests/StartupLogStoreTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/NativeCrashSummary.java"
+  "$project_dir/tests/NativeCrashSummaryTest.java"
 )
 if command -v javac >/dev/null 2>&1; then
   javac -d "$build_dir" "${sources[@]}"
@@ -13,4 +17,6 @@ else
   java --module jdk.compiler/com.sun.tools.javac.Main -d "$build_dir" "${sources[@]}"
 fi
 java -cp "$build_dir" InstallerSmokeTest
+java -cp "$build_dir" dev.rb4dx.standalone.StartupLogStoreTest
+java -cp "$build_dir" dev.rb4dx.standalone.NativeCrashSummaryTest
 python3 "$project_dir/tests/test_runtime_verifier.py"

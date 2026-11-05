@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.12.8-turnip-hooks-verified"
+        versionCode = 15
+        versionName = "0.12.9-gpu-diagnostics"
         ndk {
             abiFilters.add("arm64-v8a")
         }

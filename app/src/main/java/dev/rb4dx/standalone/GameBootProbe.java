@@ -34,9 +34,15 @@ final class GameBootProbe {
 
     static final class Result {
         final String report;
+        final Path fullLog;
 
         Result(String report) {
+            this(report, null);
+        }
+
+        Result(String report, Path fullLog) {
             this.report = report;
+            this.fullLog = fullLog;
         }
     }
 
@@ -255,13 +261,16 @@ final class GameBootProbe {
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append("crash_register_capture_enabled=true\n")
                     .append("checkpoint=").append(checkpoint).append('\n')
+                    .append(NativeCrashSummary.fromText(crashDiagnostics))
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nCRASH_DIAGNOSTICS:\n").append(crashDiagnostics)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
                     .append("\nnote=This is a startup probe; an optional still-frame preview is not live gameplay or a Deluxe launch.\n");
-            return new Result("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report);
+            return retainLog("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report, capture, files);
         } catch (Throwable error) {
-            return failed(report, error.getClass().getSimpleName() + ": " + error.getMessage());
+            return retainLog("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
+                    + "reason=" + error.getClass().getSimpleName() + ": "
+                    + error.getMessage() + '\n', capture, files);
         } finally {
             if (process != null && process.isAlive()) process.destroyForcibly();
             if (vortek != null) vortek.close();
@@ -280,6 +289,25 @@ final class GameBootProbe {
     private static Result failed(StringBuilder report, String reason) {
         return new Result("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
                 + "reason=" + reason + '\n');
+    }
+
+    private static Result retainLog(String report, File capture, Path files) {
+        if (capture == null || !capture.isFile()) {
+            return new Result(report + "full_log_available=false\n");
+        }
+        try {
+            Path destination = files.resolve("diagnostics/rb4dx-last-startup.log");
+            StartupLogStore.Retention saved = StartupLogStore.retainTail(
+                    capture, destination, StartupLogStore.MAX_SAVED_BYTES);
+            return new Result(report + "full_log_available=true\n"
+                    + "full_log_source_bytes=" + saved.sourceBytes + '\n'
+                    + "full_log_saved_bytes=" + saved.savedBytes + '\n'
+                    + "full_log_truncated=" + saved.truncated + '\n', saved.path);
+        } catch (IOException logError) {
+            // Never conceal the actual guest crash because storing its log failed.
+            return new Result(report + "full_log_available=false\n"
+                    + "full_log_error=" + logError.getClass().getSimpleName() + '\n');
+        }
     }
 
     private static String tail(File file) throws IOException {
