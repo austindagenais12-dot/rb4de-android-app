@@ -76,11 +76,21 @@ final class GameBootProbe {
                 + ".sock");
         Path vortekSocket = files.resolve("rb4dx-vortek-" + Long.toHexString(System.nanoTime())
                 + ".sock");
-        if (!Files.isRegularFile(gameEboot) || !Files.isReadable(gameEboot)
-                || !Files.isRegularFile(loader) || !Files.isRegularFile(emulator)
-                || !Files.isRegularFile(x11SocketBridge)
-                || !Files.isReadable(vulkanDriverFile)) {
-            return failed(report, "Native loader, X11 bridge, Vulkan ICD, emulator or eboot.bin unavailable");
+        // Diagnose each dependency independently: one missing packaged .so
+        // should not look like a bad game dump or a broken GPU driver.
+        boolean gameReady = Files.isRegularFile(gameEboot) && Files.isReadable(gameEboot);
+        boolean loaderReady = Files.isRegularFile(loader);
+        boolean emulatorReady = Files.isRegularFile(emulator);
+        boolean x11BridgeReady = Files.isRegularFile(x11SocketBridge);
+        boolean icdReady = Files.isRegularFile(vulkanDriverFile)
+                && Files.isReadable(vulkanDriverFile);
+        report.append("eboot_available=").append(gameReady).append('\n')
+                .append("native_loader_available=").append(loaderReady).append('\n')
+                .append("emulator_available=").append(emulatorReady).append('\n')
+                .append("x11_redirect_available=").append(x11BridgeReady).append('\n')
+                .append("vulkan_icd_available=").append(icdReady).append('\n');
+        if (!gameReady || !loaderReady || !emulatorReady || !x11BridgeReady || !icdReady) {
+            return failed(report, "Required startup dependency missing (see *_available fields)");
         }
         report.append("expected_title_id=").append(expectedTitle).append('\n')
                 .append("game_path=").append(gameEboot).append('\n')
