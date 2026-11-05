@@ -18,11 +18,11 @@
 #include <unistd.h>
 
 #include "bachata_vortek_protocol.h"
+#include "rb4dx_window_images.h"
 #include "vulkan_wrapper.h"
 
 #define TAG "RB4DX.Vortek.Server"
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define MAX_WINDOWS 32
 
 // The public JNI exports from the pinned upstream Vortek renderer.
 extern jlong Java_com_winlator_xenvironment_components_VortekRendererComponent_createVkContext(
@@ -57,15 +57,8 @@ struct Server {
     int handshakes_failed;
 };
 
-typedef struct WindowBuffer {
-    int id;
-    int width;
-    int height;
-    AHardwareBuffer* buffer;
-} WindowBuffer;
-
 static pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
-static WindowBuffer buffers[MAX_WINDOWS];
+static Rb4dxWindowImages window_images;
 
 static bool read_all(int fd, void* destination, size_t bytes) {
     unsigned char* p = destination;
@@ -353,23 +346,16 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_stopNativeServ
 
 JNIEXPORT jlong JNICALL
 Java_com_winlator_xenvironment_components_VortekRendererComponent_acquireNativeBuffer(
-        JNIEnv* env, jobject component, jint window_id, jboolean prefer_bgra,
+        JNIEnv* env, jobject component, jint window_id, jint image_index, jboolean prefer_bgra,
         jint width, jint height) {
     (void)env; (void)component; (void)prefer_bgra;
-    if (width < 1 || height < 1 || width > 8192 || height > 8192) return 0;
+    if (width < 1 || height < 1 || width > 8192 || height > 8192 ||
+        image_index < 0 || image_index > 2) return 0;
     pthread_mutex_lock(&buffer_mutex);
-    int free_slot = -1;
-    for (int i = 0; i < MAX_WINDOWS; ++i) {
-        if (buffers[i].buffer && buffers[i].id == window_id &&
-                buffers[i].width == width && buffers[i].height == height) {
-            jlong result = (jlong)(uintptr_t)buffers[i].buffer;
-            pthread_mutex_unlock(&buffer_mutex);
-            return result;
-        }
-        if (!buffers[i].buffer) free_slot = i;
-    }
-    jlong result = 0;
-    if (free_slot >= 0) {
+    uintptr_t existing = rb4dx_window_images_lookup(&window_images, window_id,
+            (uint8_t)image_index, width, height);
+    jlong result = (jlong)existing;
+    if (!existing && window_images.count < RB4DX_MAX_WINDOW_IMAGES) {
         AHardwareBuffer_Desc desc = {
             .width = (uint32_t)width, .height = (uint32_t)height, .layers = 1,
             .format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
@@ -378,31 +364,44 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_acquireNativeB
         };
         AHardwareBuffer* buffer = NULL;
         if (AHardwareBuffer_allocate(&desc, &buffer) == 0 && buffer) {
-            buffers[free_slot] = (WindowBuffer){
-                .id = window_id, .width = width, .height = height, .buffer = buffer
-            };
-            result = (jlong)(uintptr_t)buffer;
+            if (rb4dx_window_images_record(&window_images, window_id,
+                    (uint8_t)image_index, width, height, (uintptr_t)buffer)) {
+                result = (jlong)(uintptr_t)buffer;
+            } else {
+                AHardwareBuffer_release(buffer);
+            }
         }
     }
     pthread_mutex_unlock(&buffer_mutex);
     return result;
 }
 
-// Convert a retained, app-owned AHardwareBuffer to a Java reference. The
+// Remember the exact swapchain image selected by vkQueuePresentKHR.
+// This notification is not evidence that the GPU fence has signalled.
+JNIEXPORT jboolean JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeNotePresentedImage(
+        JNIEnv* env, jobject component, jint window_id, jint image_index) {
+    (void)env; (void)component;
+    if (image_index < 0 || image_index > 2) return JNI_FALSE;
+    pthread_mutex_lock(&buffer_mutex);
+    bool found = rb4dx_window_images_presented(&window_images, window_id, (uint8_t)image_index);
+    pthread_mutex_unlock(&buffer_mutex);
+    return found ? JNI_TRUE : JNI_FALSE;
+}
+
+// Convert the last presented app-owned AHardwareBuffer to a Java reference. The
 // Vulkan request threads have to be stopped before calling this method for
 // diagnostic display, otherwise the producer may modify the buffer while
 // Android's hardware canvas is sampling it.
 JNIEXPORT jobject JNICALL
-Java_com_winlator_xenvironment_components_VortekRendererComponent_getNativeHardwareBuffer(
-        JNIEnv* env, jobject component, jint window_id) {
+Java_com_winlator_xenvironment_components_VortekRendererComponent_getLastPresentedNativeHardwareBuffer(
+        JNIEnv* env, jobject component) {
     (void)component;
     jobject result = NULL;
     pthread_mutex_lock(&buffer_mutex);
-    for (int i = 0; i < MAX_WINDOWS; ++i) {
-        if (buffers[i].buffer && buffers[i].id == window_id) {
-            result = AHardwareBuffer_toHardwareBuffer(env, buffers[i].buffer);
-            break;
-        }
+    uintptr_t handle = 0;
+    if (rb4dx_window_images_preview(&window_images, &handle)) {
+        result = AHardwareBuffer_toHardwareBuffer(env, (AHardwareBuffer*)handle);
     }
     pthread_mutex_unlock(&buffer_mutex);
     return result;
@@ -413,10 +412,10 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_releaseNativeB
         JNIEnv* env, jobject component) {
     (void)env; (void)component;
     pthread_mutex_lock(&buffer_mutex);
-    for (int i = 0; i < MAX_WINDOWS; ++i) {
-        if (buffers[i].buffer) AHardwareBuffer_release(buffers[i].buffer);
-        memset(&buffers[i], 0, sizeof(buffers[i]));
+    for (size_t i = 0; i < window_images.count; ++i) {
+        AHardwareBuffer_release((AHardwareBuffer*)window_images.images[i].handle);
     }
+    rb4dx_window_images_clear(&window_images);
     pthread_mutex_unlock(&buffer_mutex);
 }
 

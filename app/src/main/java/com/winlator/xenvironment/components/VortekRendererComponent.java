@@ -83,7 +83,7 @@ public final class VortekRendererComponent implements AutoCloseable {
         Surface surface = previewHolder.getSurface();
         if (surface == null || !surface.isValid()) return false;
 
-        HardwareBuffer buffer = getNativeHardwareBuffer(lastUpdatedWindow.get());
+        HardwareBuffer buffer = getLastPresentedNativeHardwareBuffer();
         if (buffer == null) return false;
         Bitmap bitmap = null;
         try {
@@ -152,16 +152,18 @@ public final class VortekRendererComponent implements AutoCloseable {
     private int getWindowHeight(int windowId) { return height; }
 
     @SuppressWarnings("unused")
-    private long getWindowHardwareBuffer(int windowId, boolean preferBgra) {
-        return acquireNativeBuffer(windowId, preferBgra, width, height);
+    private long getWindowHardwareBuffer(int windowId, int imageIndex, boolean preferBgra) {
+        return acquireNativeBuffer(windowId, imageIndex, preferBgra, width, height);
     }
 
     // Called by the upstream renderer after a window's GPU content changes.
     // Keep a thread-safe window ID for a still-frame preview at probe exit.
     @SuppressWarnings("unused")
-    private void updateWindowContent(int windowId) {
-        lastUpdatedWindow.set(windowId);
-        windowUpdates.incrementAndGet();
+    private void updateWindowContent(int windowId, int imageIndex) {
+        if (nativeNotePresentedImage(windowId, imageIndex)) {
+            lastUpdatedWindow.set(windowId);
+            windowUpdates.incrementAndGet();
+        }
     }
 
     private native long createVkContext(int clientFd, Options options);
@@ -176,7 +178,8 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native int nativeCreatedContexts(long ptr);
     private native int nativeHandshakesOk(long ptr);
     private native int nativeHandshakesFailed(long ptr);
-    private native long acquireNativeBuffer(int windowId, boolean preferBgra, int width, int height);
-    private native HardwareBuffer getNativeHardwareBuffer(int windowId);
+    private native long acquireNativeBuffer(int windowId, int imageIndex, boolean preferBgra, int width, int height);
+    private native boolean nativeNotePresentedImage(int windowId, int imageIndex);
+    private native HardwareBuffer getLastPresentedNativeHardwareBuffer();
     private native void releaseNativeBuffers();
 }

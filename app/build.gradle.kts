@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.12.10-feedback-loop-guard"
+        versionCode = 17
+        versionName = "0.12.11-frame-index-probe"
         ndk {
             abiFilters.add("arm64-v8a")
         }

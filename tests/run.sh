@@ -25,4 +25,16 @@ c++ -std=c++20 -Wall -Wextra -Werror \
   -o "$build_dir/VulkanDispatchGuardTest"
 "$build_dir/VulkanDispatchGuardTest"
 echo "PASS: optional Vulkan extension requires a valid dispatcher entrypoint"
+cc -std=c11 -Wall -Wextra -Werror \
+  -I "$project_dir/native/vortek" \
+  "$project_dir/tests/VortekFrameRingTest.c" \
+  "$project_dir/native/vortek/rb4dx_frame_ring.c" \
+  -o "$build_dir/VortekFrameRingTest"
+"$build_dir/VortekFrameRingTest"
+cc -std=c11 -Wall -Wextra -Werror \
+  -I "$project_dir/native/vortek" \
+  "$project_dir/tests/VortekWindowImagesTest.c" \
+  "$project_dir/native/vortek/rb4dx_window_images.c" \
+  -o "$build_dir/VortekWindowImagesTest"
+"$build_dir/VortekWindowImagesTest"
 python3 "$project_dir/tests/test_runtime_verifier.py"

@@ -8,10 +8,12 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue]
     paths:
       - 'app/**'
       - 'native/vortek/**'
+      - 'native/patches/**'
+      - 'tests/**'
       - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/android.yml'
@@ -44,8 +46,10 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
-          elif [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" ]]; then
-            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=$GITHUB_REF_NAME&per_page=1" --jq '.workflow_runs[0].id')"
+          elif [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" || \
+                  "$GITHUB_REF_NAME" == "feature/v0131-live-frame-queue" ]]; then
+            # Reuse the known-good guest runtime with the feedback-loop guard.
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=fix/v0130-feedback-loop-dispatch&per_page=1" --jq '.workflow_runs[0].id')"
           else
             run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')"
           fi
@@ -54,8 +58,9 @@ jobs:
             exit 1
           fi
           native_branch="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_branch')"
-          if [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" && \
-                "$native_branch" != "$GITHUB_REF_NAME" ]]; then
+          if [[ ( "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" || \
+                  "$GITHUB_REF_NAME" == "feature/v0131-live-frame-queue" ) && \
+                "$native_branch" != "fix/v0130-feedback-loop-dispatch" ]]; then
             echo "Refusing native runtime from another branch: $native_branch" >&2
             exit 1
           fi
@@ -191,6 +196,10 @@ jobs:
           git -C "$server_src" fetch -q --depth 1 --filter=blob:none origin "$server_rev"
           git -C "$server_src" checkout -q --detach FETCH_HEAD
           test "$(git -C "$server_src" rev-parse HEAD)" = "$server_rev"
+          # Carry per-swapchain-image identity through the pinned Vortek JNI
+          # callbacks. Fail loudly if upstream source changes under the pin.
+          git -C "$server_src" apply --check "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
+          git -C "$server_src" apply "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
           cmake -S native/vortek -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DWINLATOR_SOURCE="$winlator_src" -DVORTEK_SERVER_SOURCE="$server_src"
           cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge hook_impl main_hook --parallel 4
           install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libwinlator.so
@@ -267,7 +276,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip' versionCode='16' versionName='0.12.10-feedback-loop-guard'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip' versionCode='17' versionName='0.12.11-frame-index-probe'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -278,5 +287,5 @@ jobs:
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-x11-window-startup-debug
+          name: rb4dx-frame-index-probe-debug
           path: app/build/outputs/apk/debug/*.apk
