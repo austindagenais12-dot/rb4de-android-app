@@ -259,6 +259,7 @@ final class GameBootProbe {
                     .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
                     .append("android_surface_attached=false\n")
+                    .append(vortek.heartbeatReport())
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append(vortek.previewDiagnosticReport())
                     .append("crash_register_capture_enabled=true\n")

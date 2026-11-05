@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.hardware.HardwareBuffer;
+import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -19,8 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * The JNI names are intentionally compatible with the upstream Vortek
  * renderer. This is an actual Vulkan command server. Its first Android
- * screen-output milestone is an end-of-probe still-frame preview, after
- * the Vulkan producer has stopped. Continuous screen output is not ready.
+ * screen-output milestones are a diagnostic live callback heartbeat and a
+ * post-stop still-frame preview. Continuous game-video output is not ready.
  */
 public final class VortekRendererComponent implements AutoCloseable {
     // Retain the GPU source until a later preview replaces it so Android's
@@ -32,7 +33,9 @@ public final class VortekRendererComponent implements AutoCloseable {
     private final SurfaceHolder previewHolder;
     private final AtomicInteger lastUpdatedWindow = new AtomicInteger(Integer.MIN_VALUE);
     private final AtomicInteger windowUpdates = new AtomicInteger();
+    private final LiveHeartbeatTracker heartbeat = new LiveHeartbeatTracker(750);
     private volatile FramePreviewTrace lastPreviewTrace = new FramePreviewTrace();
+    private volatile boolean previewOnly;
     private long serverPtr;
 
     static {
@@ -70,12 +73,21 @@ public final class VortekRendererComponent implements AutoCloseable {
 
     public String previewDiagnosticReport() { return lastPreviewTrace.report(); }
 
+    public String heartbeatReport() {
+        return "android_live_transport_heartbeat_attempted=" + heartbeat.attempted() + '\n'
+                + "android_live_transport_heartbeat_posted=" + heartbeat.posted() + '\n'
+                + "android_live_transport_heartbeat_failed=" + heartbeat.failed() + '\n'
+                + "android_live_transport_heartbeat_last_failure=" + heartbeat.lastFailure() + '\n'
+                + "android_live_game_frame_posted=false\n";
+    }
+
     /**
      * Diagnostic only. The producer must be stopped before hardware buffers
      * are sampled by Android's canvas: sampling while Vulkan is writing into
      * the same shared buffer would be undefined behavior.
      */
     public synchronized boolean stopAndRenderFinalFrame() {
+        previewOnly = true;
         FramePreviewTrace trace = new FramePreviewTrace();
         lastPreviewTrace = trace;
         trace.begin("SERVER_STOP");
@@ -161,6 +173,7 @@ public final class VortekRendererComponent implements AutoCloseable {
 
     public synchronized boolean start(String privateSocketPath) {
         if (serverPtr != 0) return true;
+        previewOnly = false;
         serverPtr = startNativeServer(privateSocketPath, options);
         return serverPtr != 0;
     }
@@ -183,6 +196,7 @@ public final class VortekRendererComponent implements AutoCloseable {
 
     @Override
     public synchronized void close() {
+        previewOnly = true;
         if (serverPtr != 0) {
             stopNativeServer(serverPtr);
             serverPtr = 0;
@@ -203,14 +217,61 @@ public final class VortekRendererComponent implements AutoCloseable {
         return acquireNativeBuffer(windowId, imageIndex, preferBgra, width, height);
     }
 
-    // Called by the upstream renderer after a window's GPU content changes.
-    // Keep a thread-safe window ID for a still-frame preview at probe exit.
+    // Called by the upstream renderer on present. Never sample the backing
+    // HardwareBuffer here: Vortek has not supplied a completed GPU fence.
+    // Instead paint independent diagnostic pixels to verify the live surface.
     @SuppressWarnings("unused")
     private void updateWindowContent(int windowId, int imageIndex) {
         if (nativeNotePresentedImage(windowId, imageIndex)) {
             lastUpdatedWindow.set(windowId);
             windowUpdates.incrementAndGet();
+            if (!previewOnly) renderLiveHeartbeat();
         }
+    }
+
+    private void renderLiveHeartbeat() {
+        if (!heartbeat.tryBegin(SystemClock.elapsedRealtime())) return;
+        if (previewHolder == null) {
+            heartbeat.recordFailed("SURFACE_HOLDER_MISSING");
+            return;
+        }
+        Surface surface = previewHolder.getSurface();
+        if (surface == null || !surface.isValid()) {
+            heartbeat.recordFailed("SURFACE_INVALID");
+            return;
+        }
+        Canvas canvas = null;
+        String error = null;
+        try {
+            canvas = surface.lockHardwareCanvas();
+            if (canvas == null) {
+                error = "CANVAS_UNAVAILABLE";
+            } else {
+                canvas.drawColor(Color.rgb(7, 38, 64));
+                Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                paint.setColor(Color.WHITE);
+                paint.setTextSize(40f);
+                float top = Math.max(55f, canvas.getHeight() / 2f - 50f);
+                canvas.drawText("RB4DX DISPLAY LINK TEST", 24f, top, paint);
+                paint.setTextSize(31f);
+                paint.setColor(Color.rgb(100, 215, 255));
+                canvas.drawText("Vortek present #" + windowUpdates.get(), 24f, top + 46f, paint);
+                paint.setTextSize(25f);
+                canvas.drawText("Diagnostic only - NOT game video", 24f, top + 82f, paint);
+            }
+        } catch (RuntimeException exception) {
+            error = "CANVAS_" + exception.getClass().getSimpleName();
+        } finally {
+            if (canvas != null) {
+                try {
+                    surface.unlockCanvasAndPost(canvas);
+                } catch (RuntimeException exception) {
+                    if (error == null) error = "POST_" + exception.getClass().getSimpleName();
+                }
+            }
+        }
+        if (error == null) heartbeat.recordPosted();
+        else heartbeat.recordFailed(error);
     }
 
     private native long createVkContext(int clientFd, Options options);

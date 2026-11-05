@@ -330,7 +330,9 @@ public final class MainActivity extends Activity {
                         + "game version automatically and records the startup stage, "
                         + "socket messages and emulator errors. If the GPU produced a window "
                         + "buffer, a still-frame preview may appear in the display above after "
-                        + "the process exits. It does NOT launch Deluxe or provide live gameplay. "
+                        + "the process exits. During startup a changing display-link status may "
+                        + "appear when Vortek presents. This is NOT game video or live gameplay. "
+                        + "It does NOT launch Deluxe. "
                         + "It may temporarily use substantial RAM.",
                 14, MUTED, false);
         gameBootStatus = addText(body,

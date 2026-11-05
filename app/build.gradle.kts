@@ -10,16 +10,16 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.12.13-gpu-wait-trace"
+        versionCode = 20
+        versionName = "0.12.14-live-heartbeat"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Diagnostic v0.12.13 is separate from v0.12.10, v0.12.11 and v0.12.12.
-    // All previous apps and their app-private data remain untouched.
+    // Live-surface v0.12.14 remains separate from v0.12.10 through v0.12.13.
+    // It cannot overwrite previous app installs or their app-private data.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")
@@ -30,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk.turnip.gpuwaittrace"
-            manifestPlaceholders["appLabel"] = "RB4DX GPU Wait Trace"
+            applicationIdSuffix = ".linuxvk.turnip.liveheartbeat"
+            manifestPlaceholders["appLabel"] = "RB4DX Live Display Test"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }

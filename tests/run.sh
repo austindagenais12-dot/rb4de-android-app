@@ -14,6 +14,8 @@ sources=(
   "$project_dir/tests/GpuWaitSummaryTest.java"
   "$project_dir/app/src/main/java/com/winlator/xenvironment/components/FramePreviewTrace.java"
   "$project_dir/tests/FramePreviewTraceTest.java"
+  "$project_dir/app/src/main/java/com/winlator/xenvironment/components/LiveHeartbeatTracker.java"
+  "$project_dir/tests/LiveHeartbeatTrackerTest.java"
 )
 if command -v javac >/dev/null 2>&1; then
   javac -d "$build_dir" "${sources[@]}"
@@ -25,6 +27,7 @@ java -cp "$build_dir" dev.rb4dx.standalone.StartupLogStoreTest
 java -cp "$build_dir" dev.rb4dx.standalone.NativeCrashSummaryTest
 java -cp "$build_dir" dev.rb4dx.standalone.GpuWaitSummaryTest
 java -cp "$build_dir" com.winlator.xenvironment.components.FramePreviewTraceTest
+java -cp "$build_dir" com.winlator.xenvironment.components.LiveHeartbeatTrackerTest
 c++ -std=c++20 -Wall -Wextra -Werror \
   -I "$project_dir/native/patches" \
   "$project_dir/tests/VulkanDispatchGuardTest.cpp" \
@@ -45,3 +48,5 @@ cc -std=c11 -Wall -Wextra -Werror \
 "$build_dir/VortekWindowImagesTest"
 python3 "$project_dir/tests/test_runtime_verifier.py"
 python3 "$project_dir/tests/test_gpu_wait_trace_package.py"
+python3 "$project_dir/tests/test_live_heartbeat_wiring.py"
+python3 "$project_dir/tests/test_live_heartbeat_package.py"

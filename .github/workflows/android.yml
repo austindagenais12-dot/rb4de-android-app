@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat]
     paths:
       - 'app/**'
       - 'native/vortek/**'
@@ -46,8 +46,9 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
-          elif [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" ]]; then
-            # This diagnostic requires its *own* patched core, not v0.12.12's artifact.
+          elif [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" || \
+                  "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" ]]; then
+            # v0.12.14 changes Android Java only; reuse v0.12.13's trace-enabled core.
             run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=feature/v01213-gpu-wait-trace&per_page=1" --jq '.workflow_runs[0].id')"
           elif [[ "$GITHUB_REF_NAME" == "fix/v0130-feedback-loop-dispatch" || \
                   "$GITHUB_REF_NAME" == "feature/v0131-live-frame-queue" || \
@@ -62,7 +63,8 @@ jobs:
             exit 1
           fi
           native_branch="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_branch')"
-          if [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" && \
+          if [[ ( "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" || \
+                  "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" ) && \
                 "$native_branch" != "feature/v01213-gpu-wait-trace" ]]; then
             echo "Refusing non-diagnostic native runtime: $native_branch" >&2
             exit 1
@@ -286,7 +288,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.gpuwaittrace' versionCode='19' versionName='0.12.13-gpu-wait-trace'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.liveheartbeat' versionCode='20' versionName='0.12.14-live-heartbeat'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -297,5 +299,5 @@ jobs:
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-gpu-wait-trace-debug
+          name: rb4dx-live-heartbeat-debug
           path: app/build/outputs/apk/debug/*.apk
