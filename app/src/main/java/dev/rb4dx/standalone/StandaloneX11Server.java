@@ -40,7 +40,9 @@ final class StandaloneX11Server implements AutoCloseable {
     static StandaloneX11Server start(Context context, Path runtime) throws IOException {
         Path executable = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "librb4dx_x11_server.so");
-        Path xkb = runtime.resolve("rootfs/usr/share/X11/xkb");
+        // runtime.zip contains paths relative to its *rootfs* payload; the
+        // unpacked install root therefore has usr/share, not rootfs/usr/share.
+        Path xkb = runtime.resolve("usr/share/X11/xkb");
         if (!Files.isRegularFile(executable) || !Files.isReadable(executable)) {
             throw new IOException("Bundled independent Android X11 executable is missing");
         }

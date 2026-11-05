@@ -18,6 +18,8 @@ REQUIRED = {
     "host/ld-linux-aarch64.so.1",
     "host/fexcore-smoke",
     "host/lib/libvulkan_vortek.so",
+    # The embedded SDL/X11 startup reads these from the flattened runtime ZIP.
+    "usr/share/X11/xkb/keycodes/evdev",
 }
 
 

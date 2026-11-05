@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.10.0-embedded-x11-startup"
+        versionCode = 13
+        versionName = "0.10.1-xkb-runtime-path"
         ndk {
             abiFilters.add("arm64-v8a")
         }
