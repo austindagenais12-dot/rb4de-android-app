@@ -57,7 +57,7 @@ final class GameBootProbe {
                 .append("max_runtime_ms=").append(timeoutMs).append('\n');
         if (stop.isStopped()) return cancelled(report);
         if (!Environment.isExternalStorageManager()) {
-            return failed(report, "All files access permission was not granted");
+            return failed(report, "All files access permission was not granted", stop);
         }
 
         // Always recheck the chosen game and title ID; never boot an arbitrary
@@ -65,12 +65,12 @@ final class GameBootProbe {
         GamePreflight.Result preflight = GamePreflight.inspect(context, gameTree, expectedTitle);
         if (!preflight.succeeded || !preflight.report.contains("app_ver=02.21")) {
             return failed(report, "Rock Band 4 region/version preflight did not match 02.21\n"
-                    + preflight.report);
+                    + preflight.report, stop);
         }
         if (stop.isStopped()) return cancelled(report);
         String gameFolder = GamePreflight.rawPrimaryPath(gameTree);
         if (gameFolder == null) {
-            return failed(report, "Selected game folder is not mapped to primary shared storage");
+            return failed(report, "Selected game folder is not mapped to primary shared storage", stop);
         }
         Path gameEboot = Path.of(gameFolder, "eboot.bin");
         Path files = context.getFilesDir().toPath().toAbsolutePath().normalize();
@@ -105,7 +105,7 @@ final class GameBootProbe {
                 .append("x11_redirect_available=").append(x11BridgeReady).append('\n')
                 .append("vulkan_icd_available=").append(icdReady).append('\n');
         if (!gameReady || !loaderReady || !emulatorReady || !x11BridgeReady || !icdReady) {
-            return failed(report, "Required startup dependency missing (see *_available fields)");
+            return failed(report, "Required startup dependency missing (see *_available fields)", stop);
         }
         report.append("expected_title_id=").append(expectedTitle).append('\n')
                 .append("game_path=").append(gameEboot).append('\n')
@@ -122,7 +122,7 @@ final class GameBootProbe {
                 "libvulkan_freedreno.so");
         if (useTurnip && !Files.isRegularFile(turnipLibrary)) {
             report.append("android_gpu_driver=turnip\nturnip_driver_available=false\n");
-            return failed(report, "Turnip selected but bundled driver is missing; install the full APK or select System Adreno");
+            return failed(report, "Turnip selected but bundled driver is missing; install the full APK or select System Adreno", stop);
         }
         Path hookImpl = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "libhook_impl.so");
@@ -131,7 +131,7 @@ final class GameBootProbe {
         report.append("turnip_hook_impl_available=").append(Files.isRegularFile(hookImpl)).append('\n')
                 .append("turnip_main_hook_available=").append(Files.isRegularFile(mainHook)).append('\n');
         if (useTurnip && (!Files.isRegularFile(hookImpl) || !Files.isRegularFile(mainHook))) {
-            return failed(report, "Turnip requires bundled AdrenoTools hook libraries; missing libhook_impl.so or libmain_hook.so");
+            return failed(report, "Turnip requires bundled AdrenoTools hook libraries; missing libhook_impl.so or libmain_hook.so", stop);
         }
         report.append("android_gpu_driver=").append(useTurnip ? "turnip" : "system_adreno").append('\n')
                 .append("turnip_driver_available=")
@@ -171,13 +171,13 @@ final class GameBootProbe {
             vortek = new VortekRendererComponent(context, previewSurface,
                     useTurnip ? turnipLibrary.toString() : null);
             if (!vortek.start(vortekSocket.toString())) {
-                return failed(report, "Unable to start Android Vortek Vulkan transport server");
+                return failed(report, "Unable to start Android Vortek Vulkan transport server", stop);
             }
             report.append("vortek_server_ready=true\n")
                     .append("vortek_socket=").append(vortekSocket).append('\n');
 
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
-            if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd));
+            if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd), stop);
             int listeningFd = serverFd;
             stop.onStop(() -> NativeRuntimeSocket.cancelSession(listeningFd));
             if (stop.isStopped()) return cancelled(report);
@@ -238,11 +238,11 @@ final class GameBootProbe {
             inputSender = Executors.newSingleThreadScheduledExecutor();
             inputSender.scheduleAtFixedRate(activeInput::tick, 0, 50, TimeUnit.MILLISECONDS);
             boolean completed = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            boolean stoppedByUser = stop.isStopped();
             if (!completed) {
                 process.destroyForcibly();
                 process.waitFor(2, TimeUnit.SECONDS);
             }
-            boolean stoppedByUser = stop.isStopped();
             int exit = completed ? process.exitValue() : -1;
             inputSender.shutdownNow();
             inputSender.awaitTermination(750, TimeUnit.MILLISECONDS);
@@ -303,14 +303,30 @@ final class GameBootProbe {
             return retainLog("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report, capture, files);
         } catch (Throwable error) {
             return retainLog("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
+                    + "timed_out=false\nstopped_by_user=" + stop.isStopped() + '\n'
                     + "reason=" + error.getClass().getSimpleName() + ": "
                     + error.getMessage() + '\n', capture, files);
         } finally {
+            // JNI poll does not respond to Java Thread.interrupt(). Always
+            // cancel the native session here, including errors during setup
+            // and analysis, and let it detach the accepted client before the
+            // listening descriptor can be closed or reused by another test.
+            if (serverFd >= 0) NativeRuntimeSocket.cancelSession(serverFd);
             if (inputSender != null) inputSender.shutdownNow();
             if (process != null && process.isAlive()) process.destroyForcibly();
             if (vortek != null) vortek.close();
             if (x11 != null) x11.close();
-            if (listener != null) listener.shutdownNow();
+            if (listener != null) {
+                listener.shutdown();
+                try {
+                    if (!listener.awaitTermination(2, TimeUnit.SECONDS)) {
+                        listener.shutdownNow();
+                    }
+                } catch (InterruptedException interrupted) {
+                    listener.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
             if (serverFd >= 0) NativeRuntimeSocket.closeServer(serverFd);
             if (capture != null) capture.delete();
             try {
@@ -321,8 +337,9 @@ final class GameBootProbe {
         }
     }
 
-    private static Result failed(StringBuilder report, String reason) {
+    private static Result failed(StringBuilder report, String reason, ProbeStopToken stop) {
         return new Result("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
+                + "timed_out=false\nstopped_by_user=" + stop.isStopped() + '\n'
                 + "reason=" + reason + '\n');
     }
 

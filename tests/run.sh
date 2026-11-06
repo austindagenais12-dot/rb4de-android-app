@@ -76,6 +76,20 @@ cc -std=c11 -Wall -Wextra -Werror -pthread \
   "$project_dir/app/src/main/cpp/rb4dx_socket_cancel.c" \
   -o "$build_dir/SocketCancelTest"
 "$build_dir/SocketCancelTest"
+cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -pthread \
+  -I "$project_dir/tests/include" \
+  -I "$project_dir/app/src/main/cpp" \
+  "$project_dir/tests/NativeListenerSessionTest.c" \
+  "$project_dir/app/src/main/cpp/native_runtime_socket.c" \
+  "$project_dir/app/src/main/cpp/rb4dx_socket_cancel.c" \
+  "$project_dir/app/src/main/cpp/rb4dx_input_transport.c" \
+  -o "$build_dir/NativeListenerSessionTest"
+if "$build_dir/NativeListenerSessionTest"; then
+  :
+else
+  status=$?
+  if [ "$status" -ne 77 ]; then exit "$status"; fi
+fi
 python3 "$project_dir/tests/test_native_extended_listener.py"
 python3 "$project_dir/tests/test_extended_probe_wiring.py"
 python3 "$project_dir/tests/test_extended_apk_package.py"

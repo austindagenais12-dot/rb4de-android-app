@@ -1,6 +1,7 @@
 package dev.rb4dx.standalone;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
 
 public final class ProbeStopTokenTest {
     public static void main(String[] args) {
@@ -26,6 +27,39 @@ public final class ProbeStopTokenTest {
         if (socketStops.get() != 1 || processStops.get() != 1) {
             throw new AssertionError("Stop must signal both resources only once");
         }
+        for (int run = 0; run < 200; run++) {
+            ProbeStopToken race = new ProbeStopToken();
+            AtomicInteger calls = new AtomicInteger();
+            CountDownLatch gate = new CountDownLatch(1);
+            Thread register = new Thread(() -> {
+                await(gate);
+                race.onStop(calls::incrementAndGet);
+            });
+            Thread cancel = new Thread(() -> {
+                await(gate);
+                race.requestStop();
+            });
+            register.start();
+            cancel.start();
+            gate.countDown();
+            try {
+                register.join(1000);
+                cancel.join(1000);
+            } catch (InterruptedException unexpected) {
+                throw new AssertionError(unexpected);
+            }
+            if (register.isAlive() || cancel.isAlive() || calls.get() != 1) {
+                throw new AssertionError("Stop/registration race lost or repeated action");
+            }
+        }
         System.out.println("PASS: cancellation before launch and idempotent multi-resource Stop");
+    }
+
+    private static void await(CountDownLatch gate) {
+        try {
+            gate.await();
+        } catch (InterruptedException unexpected) {
+            throw new AssertionError(unexpected);
+        }
     }
 }
