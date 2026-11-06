@@ -163,38 +163,50 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_x11_server.so |
             grep -Eq 'Machine:.*AArch64'
 
-      - name: Compile read-only Linux ARM64 glibc game probe
-        timeout-minutes: 8
+      # These two unchanged source files were already compiled successfully in
+      # v0.12.14. Reuse that exact APK's ARM64 helpers instead of depending on
+      # apt mirrors to install a cross compiler on each GitHub runner.
+      - name: Verify successful pinned v0.12.14 helper source
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-            # Runner apt mirrors can stall indefinitely; bound each network step
-            # so the workflow fails with a useful error and can be retried.
-            timeout 180s sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=25 \
-              -o Acquire::https::Timeout=25 update -qq
-            timeout 180s sudo DEBIAN_FRONTEND=noninteractive apt-get \
-              -o Acquire::Retries=2 -o Acquire::http::Timeout=25 \
-              -o Acquire::https::Timeout=25 install -y -qq gcc-aarch64-linux-gnu
+          printf '%s  %s\n' \
+            b4b85d52d9d325cc14de0654e977d42d22e1662885af2cd4de2fc9b7c96db11b native/glibc_file_probe.c \
+            c53afbb0d6b4f1cffd2e58fa9b17577679799c707e0dcdcf28d2463547027c32 native/glibc_x11_socket_redirect.c |
+            sha256sum -c -
+          run_id=42126146668
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
+          conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
+          if [[ "$sha" != a3bc456162219d5b44f2903c1ed167ff95b3733c ||
+                "$conclusion" != success ]]; then
+            echo 'Refusing changed or unsuccessful prior helper APK' >&2
+            exit 1
           fi
-          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -fPIE -pie \
-            native/glibc_file_probe.c \
-            -o app/src/main/jniLibs/arm64-v8a/librb4dx_glibc_fileprobe.so
-          readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_glibc_fileprobe.so |
-            grep -Eq 'Machine:.*AArch64'
 
-      - name: Compile app-private X11 socket client bridge
+      - name: Download verified ARM64 game and X11 probes
+        uses: actions/download-artifact@v4
+        with:
+          name: rb4dx-live-heartbeat-debug
+          run-id: 42126146668
+          github-token: ${{ github.token }}
+          path: pinned-helper-apk
+
+      - name: Stage already-compiled ARM64 probes
         shell: bash
         run: |
           set -euo pipefail
-          # The embedded X11 server uses an app-private Unix socket, while
-          # the glibc SDL client expects /tmp/.X11-unix. Redirect connect(2)
-          # for the current display only.
-          aarch64-linux-gnu-gcc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared \
-            native/glibc_x11_socket_redirect.c \
-            -o app/src/main/jniLibs/arm64-v8a/librb4dx_x11_redirect.so
-          readelf -h app/src/main/jniLibs/arm64-v8a/librb4dx_x11_redirect.so |
-            grep -Eq 'Machine:.*AArch64'
+          previous_apk=pinned-helper-apk/app-debug.apk
+          test -s "$previous_apk"
+          unzip -t "$previous_apk" >/dev/null
+          for name in librb4dx_glibc_fileprobe.so librb4dx_x11_redirect.so; do
+            unzip -p "$previous_apk" "lib/arm64-v8a/$name" \
+              > "app/src/main/jniLibs/arm64-v8a/$name"
+            test -s "app/src/main/jniLibs/arm64-v8a/$name"
+            readelf -h "app/src/main/jniLibs/arm64-v8a/$name" |
+              grep -Eq 'Machine:.*AArch64'
+          done
 
       - uses: actions/setup-java@v4
         with:
