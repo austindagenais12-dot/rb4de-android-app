@@ -16,7 +16,7 @@ assert 'run_id="42119601182"' in android
 assert '"$native_sha" != "18bbb0bc0c914f86816513cf4d10b99178984524"' in android
 assert '"$native_branch" != "feature/v01213-gpu-wait-trace"' in android
 assert "dev.rb4dx.standalone.linuxvk.turnip.inputbridge" in android
-assert "rb4dx-extended-startup-debug" in android
+assert "rb4dx-evidence-preservation-debug" in android
 assert "feature/v01213-gpu-wait-trace" in runtime
 assert "feature/v01214-live-surface-heartbeat" not in runtime
 print("PASS: previous live heartbeat path retained; controller APK pins verified v0.12.13 runtime")
