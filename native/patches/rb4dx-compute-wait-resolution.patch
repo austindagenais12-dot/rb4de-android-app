@@ -1,0 +1,35 @@
+diff --git a/src/video_core/amdgpu/liverpool.cpp b/src/video_core/amdgpu/liverpool.cpp
+--- a/src/video_core/amdgpu/liverpool.cpp
++++ b/src/video_core/amdgpu/liverpool.cpp
+@@ -1391,6 +1391,9 @@
+                 break;
+             }
+             u64 wait_iterations = 0;
++#ifdef ENABLE_BACHATA_RUNTIME
++            const auto wait_started = std::chrono::steady_clock::now();
++#endif
+             while (!wait_reg_mem->Test(regs.reg_array)) {
+ #ifdef ENABLE_BACHATA_RUNTIME
+                 if (ShouldLogStallIteration(++wait_iterations)) {
+@@ -1412,6 +1415,21 @@
+ #endif
+                 YIELD_ASC(vqid);
+             }
++#ifdef ENABLE_BACHATA_RUNTIME
++            if (wait_iterations >= 100'000) {
++                const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
++                                            std::chrono::steady_clock::now() - wait_started)
++                                            .count();
++                const bool is_memory = wait_reg_mem->mem_space.Value() ==
++                                       PM4CmdWaitRegMem::MemSpace::Memory;
++                const u32 value = is_memory ? *wait_reg_mem->Address<const u32*>()
++                                            : regs.reg_array[wait_reg_mem->Reg()];
++                LOG_WARNING(Render_Vulkan,
++                            "RB4DX_WAIT_RESOLVED queue=asc{} polls={} elapsed_us={} "
++                            "value={:#x} ref={:#x}",
++                            vqid, wait_iterations, elapsed_us, value, wait_reg_mem->ref);
++            }
++#endif
+             break;
+         }
+         case PM4ItOpcode::ReleaseMem: {

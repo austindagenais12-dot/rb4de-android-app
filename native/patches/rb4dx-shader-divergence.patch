@@ -1,0 +1,19 @@
+diff --git a/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp b/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp
+--- a/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp
++++ b/src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp
+@@ -61,9 +61,14 @@ static void EmitBarrierInMergeBlock(const IR::AbstractSyntaxNode::Data& data,
+     const IR::U1 cond = data.if_node.cond;
+     const auto is_divergent_cond =
+         IR::BreadthFirstSearch(cond, [](IR::Inst* inst) -> std::optional<bool> {
+             if (inst->GetOpcode() == IR::Opcode::GetAttributeU32 &&
+-                inst->Arg(0).Attribute() == IR::Attribute::LocalInvocationId) {
++                (inst->Arg(0).Attribute() == IR::Attribute::LocalInvocationId ||
++                 inst->Arg(0).Attribute() == IR::Attribute::LocalInvocationIndex)) {
++                return true;
++            }
++            // On this pinned ARM64 compiler, V_MBCNT_LO maps to LaneId.
++            if (inst->GetOpcode() == IR::Opcode::LaneId) {
+                 return true;
+             }
+             return std::nullopt;
+         });
