@@ -77,6 +77,7 @@ public final class MainActivity extends Activity {
     private RadioGroup gpuDrivers;
     private RadioButton systemGpuRadio;
     private RadioButton turnipGpuRadio;
+    private RadioButton bachataCompatGpuRadio;
     private Button importButton;
     private Button probeButton;
     private Button copyProbeButton;
@@ -93,6 +94,7 @@ public final class MainActivity extends Activity {
     private Button vulkanFrameButton;
     private Button copyVulkanFrameButton;
     private Button gameBootButton;
+    private Button playButton;
     private Button stopGameBootButton;
     private Button copyGameBootButton;
     private Button exportGameBootLogButton;
@@ -266,20 +268,28 @@ public final class MainActivity extends Activity {
         gpuDrivers = new RadioGroup(this);
         gpuDrivers.setOrientation(RadioGroup.VERTICAL);
         systemGpuRadio = radio("System Adreno (optional)");
-        turnipGpuRadio = radio("Mesa Turnip (default for game test)");
+        turnipGpuRadio = radio("Mesa Turnip 27 (experimental)");
+        bachataCompatGpuRadio = radio("Bachata-compatible Mesa Turnip 26.3 (recommended A/B test)");
         gpuDrivers.addView(systemGpuRadio);
         gpuDrivers.addView(turnipGpuRadio);
-        gpuDrivers.check(preferences.getBoolean(GPU_TURNIP_ENABLED, true)
-                ? turnipGpuRadio.getId() : systemGpuRadio.getId());
+        gpuDrivers.addView(bachataCompatGpuRadio);
+        String savedDriver = GpuDriverChoice.normalize(preferences.getString("gpu_driver_choice",
+                preferences.getBoolean(GPU_TURNIP_ENABLED, true) ? "turnip27" : "system"));
+        gpuDrivers.check(GpuDriverChoice.SYSTEM.equals(savedDriver)
+                ? systemGpuRadio.getId() : GpuDriverChoice.BACHATA_COMPAT.equals(savedDriver)
+                        ? bachataCompatGpuRadio.getId() : turnipGpuRadio.getId());
         gpuDrivers.setOnCheckedChangeListener((group, id) -> {
-            boolean turnip = id == turnipGpuRadio.getId();
-            if (turnip && !turnipDriverExists()) {
+            String choice = id == systemGpuRadio.getId() ? GpuDriverChoice.SYSTEM
+                    : id == bachataCompatGpuRadio.getId() ? GpuDriverChoice.BACHATA_COMPAT
+                    : GpuDriverChoice.TURNIP_27;
+            if (!GpuDriverChoice.SYSTEM.equals(choice) && !driverExists(choice)) {
                 Toast.makeText(this, "Bundled Turnip library is missing from this APK",
                         Toast.LENGTH_LONG).show();
                 group.check(systemGpuRadio.getId());
                 return;
             }
-            preferences.edit().putBoolean(GPU_TURNIP_ENABLED, turnip).apply();
+            preferences.edit().putString("gpu_driver_choice", choice)
+                    .putBoolean(GPU_TURNIP_ENABLED, !GpuDriverChoice.SYSTEM.equals(choice)).apply();
             refreshTurnipStatus();
         });
         body.addView(gpuDrivers);
@@ -421,13 +431,15 @@ public final class MainActivity extends Activity {
                 13, MUTED, false);
         addGap(body, 22);
 
-        addText(body, "11. Play", 19, FG, true);
-        Button play = button(body, "PLAY • Android bridge not connected");
-        play.setEnabled(false);
+        addText(body, "11. Play (experimental)", 19, FG, true);
+        playButton = button(body, "PLAY • full-screen Rock Band 4");
+        playButton.setEnabled(false);
+        playButton.setOnClickListener(v -> launchPlayer());
         addText(body,
-                "The controller message bridge is now available in the startup diagnostic. "
-                        + "Live game graphics, audio, instrument detection and unrestricted game launching "
-                        + "are not yet working. Play remains disabled until that is verified.",
+                "Full-screen landscape mode uses the same experimental shadPS4 GPU transport "
+                        + "plus the Bachata-compatible audio and controller socket bridges. "
+                        + "No diagnostic timeout; use Stop game to exit. "
+                        + "Gameplay is not yet verified in this build and Deluxe remains off.",
                 14, MUTED, false);
         addGap(body, 16);
         addText(body,
@@ -543,6 +555,10 @@ public final class MainActivity extends Activity {
         }
         if (gameBootButton != null) {
             gameBootButton.setEnabled(granted && selected != null
+                    && preparedRuntimeDirectory != null && !gameBootRunning);
+        }
+        if (playButton != null) {
+            playButton.setEnabled(granted && selected != null
                     && preparedRuntimeDirectory != null && !gameBootRunning);
         }
         if (!granted) {
@@ -692,6 +708,36 @@ public final class MainActivity extends Activity {
                         Math.min(1900, result.report.length())));
             });
         });
+    }
+
+    private void launchPlayer() {
+        String game = preferences.getString(GAME_URI, null);
+        if (gameBootRunning || game == null || preparedRuntimeDirectory == null
+                || !Environment.isExternalStorageManager()) {
+            Toast.makeText(this, "Select Rock Band 4 and prepare the verified runtime first",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        Intent launch = new Intent(this, GamePlayerActivity.class);
+        launch.putExtra(GamePlayerActivity.EXTRA_GAME, game);
+        launch.putExtra(GamePlayerActivity.EXTRA_TITLE, selectedTitleId);
+        launch.putExtra(GamePlayerActivity.EXTRA_RUNTIME,
+                preparedRuntimeDirectory.toString());
+        startActivity(launch);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (preferences == null || gameBootStatus == null) return;
+        String playReport = preferences.getString("last_play_report", null);
+        if (playReport != null && !playReport.equals(lastGameBootReport)) {
+            lastGameBootReport = playReport;
+            lastGameBootFullLog = getFilesDir().toPath().resolve("diagnostics/rb4dx-last-startup.log");
+            gameBootStatus.setText("Last full-screen Play session:\n"
+                    + playReport.substring(0, Math.min(1900, playReport.length())));
+            copyGameBootButton.setEnabled(true);
+            exportGameBootLogButton.setEnabled(Files.isRegularFile(lastGameBootFullLog));
+        }
     }
 
     @Override
@@ -939,19 +985,23 @@ public final class MainActivity extends Activity {
     }
 
     private boolean turnipDriverExists() {
-        return Files.isRegularFile(Path.of(getApplicationInfo().nativeLibraryDir,
-                "libvulkan_freedreno.so"));
+        return driverExists(GpuDriverChoice.TURNIP_27);
+    }
+
+    private boolean driverExists(String choice) {
+        Path library = GpuDriverChoice.libraryPath(
+                Path.of(getApplicationInfo().nativeLibraryDir), choice);
+        return library == null || Files.isRegularFile(library);
     }
 
     private void refreshTurnipStatus() {
         if (turnipStatus == null) return;
-        if (!turnipDriverExists()) {
-            turnipStatus.setText("Bundled ARM64 Turnip library missing. Use system Adreno.");
-        } else {
-            boolean enabled = preferences.getBoolean(GPU_TURNIP_ENABLED, true);
-            turnipStatus.setText((enabled ? "Selected: Mesa Turnip" : "Selected: System Adreno")
-                    + " | Bundled ARM64 Turnip library ready");
-        }
+        String choice = GpuDriverChoice.normalize(preferences.getString("gpu_driver_choice",
+                preferences.getBoolean(GPU_TURNIP_ENABLED, true) ? "turnip27" : "system"));
+        turnipStatus.setText("Selected: " + choice
+                + " | Turnip 27: " + (turnipDriverExists() ? "ready" : "missing")
+                + " | Bachata 26.3: " + (driverExists(GpuDriverChoice.BACHATA_COMPAT)
+                        ? "ready" : "missing"));
     }
 
     private void runDeluxeImport(Uri uri) {

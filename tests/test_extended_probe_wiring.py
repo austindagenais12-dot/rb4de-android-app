@@ -13,7 +13,8 @@ assert '"timed_out=false\\nstopped_by_user=" + stop.isStopped()' in probe
 assert "NativeRuntimeSocket.cancelSession(listeningFd)" in probe
 assert "stop.onStop" in probe
 assert "process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)" in probe
-assert "NativeRuntimeSocket.readSession(listeningFd, timeoutMs)" in probe
+assert "NativeRuntimeSocket.readSession(listeningFd, play ? 0 : timeoutMs)" in probe
+assert "GameProbeOptions.requireDurationMs(timeoutMs)" in probe
 finally_block = probe.rsplit("} finally {", 1)[1]
 assert "NativeRuntimeSocket.cancelSession(serverFd)" in finally_block, (
     "exception paths must interrupt the native listener before closing the descriptor"

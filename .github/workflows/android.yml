@@ -47,9 +47,9 @@ jobs:
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" ]]; then
-            # v0.12.22 requires the freshly compiled patched ARM64 emulator,
-            # not the last successful runtime from a different branch.
-            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-runtime.yml/runs?status=success&branch=feature/v01222-shader-compat&per_page=1" --jq '.workflow_runs[0].id')"
+            # Android-only v0.12.23 changes reuse the exact verified v0.12.22
+            # patched ARM64 runtime. It is NOT an unpinned latest-success run.
+            run_id="42241434598"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01219-gpu-wait-backoff" || \
                   "$GITHUB_REF_NAME" == "feature/v01220-live-surface-transport" ]]; then
             # The only native build with the bounded GPU-wait scheduler change.
@@ -80,9 +80,9 @@ jobs:
             native_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
             native_conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
             if [[ "$native_branch" != "feature/v01222-shader-compat" || \
-                  "$native_sha" != "$GITHUB_SHA" || \
+                  "$native_sha" != "c7232ec3548c5a1ce3e1a71f5122f7e5220ba14a" || \
                   "$native_conclusion" != "success" ]]; then
-              echo "v0.12.22 requires a successful native runtime from this exact commit" >&2
+              echo "v0.12.23 requires the verified v0.12.22 native runtime" >&2
               exit 1
             fi
           fi
@@ -322,6 +322,27 @@ jobs:
           test -s app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno.so
           readelf -h app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno.so |
             grep -Eq 'Machine:.*AArch64'
+      # Independent comparison option, not a replacement for the existing
+      # pinned v27 driver. Bachata's glibc 26.1.0 emulator ZIP is NOT usable
+      # in this Android/Bionic Vulkan server; the v26.3.0-R5 ZIP is Bionic.
+      - name: Bundle verified Bachata Bionic-compatible Turnip driver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rb4dx-bachata-driver" app/src/main/assets/licenses
+          gh release download v0.2.5 \
+            --repo JICA98/Bachata-S4 \
+            --pattern bachatas4-0.2.5-release.apk \
+            --dir "$RUNNER_TEMP/rb4dx-bachata-driver"
+          python3 scripts/extract-bachata-bionic-driver.py \
+            "$RUNNER_TEMP/rb4dx-bachata-driver/bachatas4-0.2.5-release.apk" \
+            1df49463f396df8b6f042230bdc1bb9f948b8e69894c378915920875c40ab0ee \
+            app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno_compat.so \
+            app/src/main/assets/licenses/mesa-turnip-26.3.0-r5-NOTICE.txt
+          readelf -h app/src/main/jniLibs/arm64-v8a/libvulkan_freedreno_compat.so |
+            grep -Eq 'Machine:.*AArch64'
       # Android's implicit debug.keystore lives in an unpredictable location
       # on these hosted runners. Use a clearly scoped key generated once in a
       # known path, and reuse it for subsequent versions of this test package.
@@ -357,16 +378,16 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='28' versionName='0.12.22-shader-compat'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='29' versionName='0.12.23-bachata-parity'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
-              librb4dx_vortek_bridge.so libvulkan_freedreno.so \
+              librb4dx_vortek_bridge.so libvulkan_freedreno.so libvulkan_freedreno_compat.so \
               libhook_impl.so libmain_hook.so; do
             unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$name"
           done
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-shader-compat-debug
+          name: rb4dx-bachata-parity-debug
           path: app/build/outputs/apk/debug/*.apk

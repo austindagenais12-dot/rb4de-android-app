@@ -68,12 +68,15 @@ JNIEXPORT jstring JNICALL
 Java_dev_rb4dx_standalone_NativeRuntimeSocket_readSession(
         JNIEnv* env, jclass ignored, jint server_fd, jint timeout_ms) {
     (void)ignored;
-    if (server_fd < 0 || timeout_ms <= 0 || timeout_ms > 120000) {
+    // A zero deadline is reserved for explicit foreground Play sessions.
+    // Cancellation still wakes the 250-ms polling loop promptly.
+    if (server_fd < 0 || timeout_ms < 0 || timeout_ms > 120000) {
         return read_result(env, "INVALID_LISTENER", EINVAL);
     }
     // One monotonic deadline spans both accept and protocol reads. The
     // 250-ms slices let an Android Stop cancel a pre-connect listener.
-    const int64_t deadline = monotonic_ms() + timeout_ms;
+    const int64_t deadline = timeout_ms == 0 ? INT64_MAX
+            : monotonic_ms() + timeout_ms;
     int waited = 0;
     struct pollfd server_poll = { .fd = server_fd, .events = POLLIN };
     while (!rb4dx_socket_cancelled(server_fd)) {

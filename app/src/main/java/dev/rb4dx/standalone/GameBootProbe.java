@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Environment;
+import android.system.Os;
 import android.view.SurfaceHolder;
 
 import com.winlator.xenvironment.components.VortekRendererComponent;
@@ -52,8 +53,23 @@ final class GameBootProbe {
             String expectedTitle, SurfaceHolder previewSurface, Ps4InputState controller,
             int timeoutMs, ProbeStopToken stop) {
         GameProbeOptions.requireDurationMs(timeoutMs);
+        return runInternal(context, runtimeDirectory, gameTree, expectedTitle, previewSurface,
+                controller, timeoutMs, stop, false);
+    }
+
+    static Result play(Context context, Path runtimeDirectory, Uri gameTree,
+            String expectedTitle, SurfaceHolder gameSurface, Ps4InputState controller,
+            ProbeStopToken stop) {
+        return runInternal(context, runtimeDirectory, gameTree, expectedTitle, gameSurface,
+                controller, 0, stop, true);
+    }
+
+    private static Result runInternal(Context context, Path runtimeDirectory, Uri gameTree,
+            String expectedTitle, SurfaceHolder previewSurface, Ps4InputState controller,
+            int timeoutMs, ProbeStopToken stop, boolean play) {
         StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V2\n")
-                .append("mode=REAL_SHADPS4_EMBEDDED_X11_STARTUP\n")
+                .append("mode=").append(play ? "FULLSCREEN_PLAY" : "REAL_SHADPS4_EMBEDDED_X11_STARTUP")
+                .append('\n')
                 .append("max_runtime_ms=").append(timeoutMs).append('\n');
         if (stop.isStopped()) return cancelled(report);
         if (!Environment.isExternalStorageManager()) {
@@ -91,6 +107,7 @@ final class GameBootProbe {
                 + ".sock");
         Path vortekSocket = files.resolve("rb4dx-vortek-" + Long.toHexString(System.nanoTime())
                 + ".sock");
+        Path audioSocket = files.resolve("ra-" + Long.toHexString(System.nanoTime()) + ".sock");
         // Diagnose each dependency independently: one missing packaged .so
         // should not look like a bad game dump or a broken GPU driver.
         boolean gameReady = Files.isRegularFile(gameEboot) && Files.isReadable(gameEboot);
@@ -117,12 +134,15 @@ final class GameBootProbe {
         // This selects the Android driver behind Vortek. The glibc shadPS4
         // process must still use its pinned, app-private Vortek client ICD.
         SharedPreferences gpuPreferences = context.getSharedPreferences("rb4dx", Context.MODE_PRIVATE);
-        boolean useTurnip = gpuPreferences.getBoolean("gpu_turnip_enabled", true);
-        Path turnipLibrary = Path.of(context.getApplicationInfo().nativeLibraryDir,
-                "libvulkan_freedreno.so");
-        if (useTurnip && !Files.isRegularFile(turnipLibrary)) {
-            report.append("android_gpu_driver=turnip\nturnip_driver_available=false\n");
-            return failed(report, "Turnip selected but bundled driver is missing; install the full APK or select System Adreno", stop);
+        String driverChoice = GpuDriverChoice.normalize(gpuPreferences.getString(
+                "gpu_driver_choice", gpuPreferences.getBoolean("gpu_turnip_enabled", true)
+                        ? "turnip27" : "system"));
+        Path turnipLibrary = GpuDriverChoice.libraryPath(
+                Path.of(context.getApplicationInfo().nativeLibraryDir), driverChoice);
+        if (turnipLibrary != null && !Files.isRegularFile(turnipLibrary)) {
+            report.append("android_gpu_driver=").append(driverChoice)
+                    .append("\nturnip_driver_available=false\n");
+            return failed(report, "Selected bundled Turnip driver is missing; install the full APK or select System Adreno", stop);
         }
         Path hookImpl = Path.of(context.getApplicationInfo().nativeLibraryDir,
                 "libhook_impl.so");
@@ -130,29 +150,40 @@ final class GameBootProbe {
                 "libmain_hook.so");
         report.append("turnip_hook_impl_available=").append(Files.isRegularFile(hookImpl)).append('\n')
                 .append("turnip_main_hook_available=").append(Files.isRegularFile(mainHook)).append('\n');
-        if (useTurnip && (!Files.isRegularFile(hookImpl) || !Files.isRegularFile(mainHook))) {
+        if (turnipLibrary != null && (!Files.isRegularFile(hookImpl) || !Files.isRegularFile(mainHook))) {
             return failed(report, "Turnip requires bundled AdrenoTools hook libraries; missing libhook_impl.so or libmain_hook.so", stop);
         }
-        report.append("android_gpu_driver=").append(useTurnip ? "turnip" : "system_adreno").append('\n')
+        report.append("android_gpu_driver=").append(driverChoice).append('\n')
                 .append("turnip_driver_available=")
-                .append(Files.isRegularFile(turnipLibrary)).append('\n');
+                .append(turnipLibrary == null || Files.isRegularFile(turnipLibrary)).append('\n');
 
         int serverFd = -1;
         ExecutorService listener = null;
+        ExecutorService logReader = null;
+        Future<Long> logFuture = null;
         ScheduledExecutorService inputSender = null;
         InputFramePump inputPump = null;
         Process process = null;
         File capture = null;
         StandaloneX11Server x11 = null;
         VortekRendererComponent vortek = null;
+        BachataAudioSocket audio = null;
+        String oldMesaCache = Os.getenv("MESA_SHADER_CACHE_DIR");
         try {
             if (stop.isStopped()) return cancelled(report);
             // This is idempotent and never replaces user content. The emulator
             // needs an existing portable UserDir before its static path setup.
             // Its default user manager may then create home/1000 beneath it.
             Files.createDirectories(portableUserDir.resolve("home").resolve("1000"));
+            Path mesaCacheDir = ShaderCachePaths.forTitle(files, expectedTitle);
+            Files.createDirectories(mesaCacheDir);
+            // Vortek's Android/Bionic driver runs in THIS process; child-only
+            // ProcessBuilder variables would not reach its Mesa pipeline cache.
+            Os.setenv("MESA_SHADER_CACHE_DIR", mesaCacheDir.toString(), true);
             report.append("portable_user_dir=").append(portableUserDir).append('\n')
-                    .append("portable_user_dir_ready=true\n");
+                    .append("portable_user_dir_ready=true\n")
+                    .append("mesa_shader_cache_dir=").append(mesaCacheDir).append('\n')
+                    .append("mesa_shader_cache_persistent=true\n");
             if (stop.isStopped()) return cancelled(report);
 
             // This is a genuine private Xorg socket, not the SDL dummy driver.
@@ -169,12 +200,18 @@ final class GameBootProbe {
             // Preview is only taken when the producer is fully stopped.
             // The embedded X11 window is not yet connected to a live surface.
             vortek = new VortekRendererComponent(context, previewSurface,
-                    useTurnip ? turnipLibrary.toString() : null);
+                    turnipLibrary == null ? null : turnipLibrary.toString());
             if (!vortek.start(vortekSocket.toString())) {
                 return failed(report, "Unable to start Android Vortek Vulkan transport server", stop);
             }
             report.append("vortek_server_ready=true\n")
                     .append("vortek_socket=").append(vortekSocket).append('\n');
+
+            // The pinned emulator routes game audio to Bachata's Unix socket.
+            // Without this server, guest AudioOut silently discards samples.
+            audio = new BachataAudioSocket(audioSocket);
+            audio.start();
+            report.append("bachata_audio_bridge_started=true\n");
 
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
             if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd), stop);
@@ -183,7 +220,7 @@ final class GameBootProbe {
             if (stop.isStopped()) return cancelled(report);
             listener = Executors.newSingleThreadExecutor();
             Future<String> incoming = listener.submit(
-                    () -> NativeRuntimeSocket.readSession(listeningFd, timeoutMs));
+                    () -> NativeRuntimeSocket.readSession(listeningFd, play ? 0 : timeoutMs));
 
             capture = File.createTempFile("rb4dx-real-boot-", ".log", context.getCacheDir());
             ProcessBuilder builder = new ProcessBuilder(
@@ -192,9 +229,11 @@ final class GameBootProbe {
                     "--bachata-socket", socket.toString(),
                     "--bachata-storage-root", files.toString(),
                     "--game", gameEboot.toString(),
-                    "--ignore-game-patch", "--config-clean", "--fullscreen", "false");
+                    "--ignore-game-patch", "--config-clean", "--fullscreen", play ? "true" : "false");
             builder.directory(emulatorWorkingDir.toFile());
             builder.environment().put("HOME", files.toString());
+            builder.environment().put("MESA_SHADER_CACHE_DIR", mesaCacheDir.toString());
+            builder.environment().put("XDG_CACHE_HOME", files.resolve("shader-cache").toString());
             builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
             builder.environment().put("LD_LIBRARY_PATH", host.toString());
             // The Linux Vulkan loader does not search the Android app's
@@ -206,6 +245,7 @@ final class GameBootProbe {
             builder.environment().put("VK_LOADER_DEBUG", "error,warn,driver");
             builder.environment().put("BACHATA_VORTEK_LOG_LEVEL", "2");
             builder.environment().put("BACHATA_VORTEK_SOCKET", vortekSocket.toString());
+            builder.environment().put("BACHATA_ALSA_SOCKET", audio.socketPath());
             // The pinned ARM64 emulator already contains an async-signal-safe
             // crash reporter. Capture PC/LR, register state and module maps
             // if the GPU communication thread jumps through a null pointer.
@@ -223,12 +263,18 @@ final class GameBootProbe {
             builder.environment().put("SDL_VIDEODRIVER", "x11");
             builder.environment().put("XDG_RUNTIME_DIR", files.resolve("x11-session/runtime").toString());
             builder.redirectErrorStream(true);
-            builder.redirectOutput(capture);
+            if (!play) builder.redirectOutput(capture);
 
             if (stop.isStopped()) return cancelled(report);
             process = builder.start();
             Process activeProcess = process;
             stop.onStop(activeProcess::destroyForcibly);
+            if (play) {
+                logReader = Executors.newSingleThreadExecutor();
+                File destination = capture;
+                logFuture = logReader.submit(() -> ProcessLogDrain.capture(
+                        activeProcess.getInputStream(), destination.toPath()));
+            }
             // Use the native emulator's already-implemented controller snapshot
             // reader. A bounded 20 Hz sender lets button holds persist during
             // the diagnostic while avoiding a flood of socket writes.
@@ -237,7 +283,13 @@ final class GameBootProbe {
             InputFramePump activeInput = inputPump;
             inputSender = Executors.newSingleThreadScheduledExecutor();
             inputSender.scheduleAtFixedRate(activeInput::tick, 0, 50, TimeUnit.MILLISECONDS);
-            boolean completed = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            boolean completed;
+            if (play) {
+                process.waitFor();
+                completed = true;
+            } else {
+                completed = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            }
             boolean stoppedByUser = stop.isStopped();
             if (!completed) {
                 process.destroyForcibly();
@@ -246,6 +298,10 @@ final class GameBootProbe {
             int exit = completed ? process.exitValue() : -1;
             inputSender.shutdownNow();
             inputSender.awaitTermination(750, TimeUnit.MILLISECONDS);
+            if (logFuture != null) {
+                report.append("play_log_source_bytes=")
+                        .append(logFuture.get(5, TimeUnit.SECONDS)).append('\n');
+            }
             // On timeout or Stop, release the native listener before collecting
             // its trace; a missing connection must not delay UI responsiveness.
             NativeRuntimeSocket.cancelSession(listeningFd);
@@ -288,6 +344,7 @@ final class GameBootProbe {
                     .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
                     .append(vortek.heartbeatReport())
+                    .append(audio.report())
                     .append(inputPump.report())
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append(vortek.previewDiagnosticReport())
@@ -298,7 +355,8 @@ final class GameBootProbe {
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nCRASH_DIAGNOSTICS:\n").append(crashDiagnostics)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
-                    .append("\nnote=Experimental live frame output requires observing changing game video; this remains a startup probe, not a Deluxe launch.\n");
+                    .append(play ? "\nnote=Foreground Play ended; report records diagnostics, not verified playable game progress.\n"
+                            : "\nnote=Experimental live frame output requires observing changing game video; this remains a startup probe, not a Deluxe launch.\n");
             return retainLog("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report, capture, files);
         } catch (Throwable error) {
             return retainLog("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
@@ -313,6 +371,7 @@ final class GameBootProbe {
             if (serverFd >= 0) NativeRuntimeSocket.cancelSession(serverFd);
             if (inputSender != null) inputSender.shutdownNow();
             if (process != null && process.isAlive()) process.destroyForcibly();
+            if (audio != null) audio.close();
             if (vortek != null) vortek.close();
             if (x11 != null) x11.close();
             if (listener != null) {
@@ -326,8 +385,15 @@ final class GameBootProbe {
                     Thread.currentThread().interrupt();
                 }
             }
+            if (logReader != null) logReader.shutdownNow();
             if (serverFd >= 0) NativeRuntimeSocket.closeServer(serverFd);
             if (capture != null) capture.delete();
+            try {
+                if (oldMesaCache == null) Os.unsetenv("MESA_SHADER_CACHE_DIR");
+                else Os.setenv("MESA_SHADER_CACHE_DIR", oldMesaCache, true);
+            } catch (android.system.ErrnoException ignored) {
+                // Do not hide the emulator's diagnostic result on cleanup.
+            }
             try {
                 Files.deleteIfExists(socket);
             } catch (IOException ignored) {

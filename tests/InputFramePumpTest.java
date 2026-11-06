@@ -15,6 +15,17 @@ public final class InputFramePumpTest {
         InputFramePump failed = new InputFramePump(state, frame -> -32);
         failed.tick();
         check(failed.report().contains("input_last_send_error=-32"), "write error recorded");
+        state.setHardwareButton(Ps4InputState.CROSS, false);
+        InputFramePump trace = new InputFramePump(state, frame -> frame.length());
+        trace.tick();
+        state.setHardwareButton(Ps4InputState.CROSS, true);
+        trace.tick();
+        trace.tick();
+        state.setHardwareButton(Ps4InputState.CROSS, false);
+        trace.tick();
+        check(trace.report().contains("input_button_transitions=2"), "press/release transitions counted");
+        check(trace.report().contains("buttons=0x4000"), "X press mask visible in trace");
+        check(trace.report().contains("buttons=0x0"), "X release mask visible in trace");
         System.out.println("PASS: input frame pump reports delivered, disconnected, pressed, and failed writes accurately");
     }
 

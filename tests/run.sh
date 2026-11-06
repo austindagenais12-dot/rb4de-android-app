@@ -6,6 +6,14 @@ mkdir -p "$build_dir"
 sources=(
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/GameProbeOptions.java"
   "$project_dir/tests/GameProbeOptionsTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/ShaderCachePaths.java"
+  "$project_dir/tests/ShaderCachePathsTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/GpuDriverChoice.java"
+  "$project_dir/tests/GpuDriverChoiceTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/BachataAudioProtocol.java"
+  "$project_dir/tests/BachataAudioProtocolTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/ProcessLogDrain.java"
+  "$project_dir/tests/ProcessLogDrainTest.java"
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/ProbeStopToken.java"
   "$project_dir/tests/ProbeStopTokenTest.java"
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/DeluxeInstaller.java"
@@ -30,6 +38,8 @@ sources=(
   "$project_dir/tests/LiveHeartbeatTrackerTest.java"
   "$project_dir/app/src/main/java/com/winlator/xenvironment/components/LiveFrameGeometry.java"
   "$project_dir/tests/LiveFrameGeometryTest.java"
+  "$project_dir/app/src/main/java/com/winlator/xenvironment/components/FramePixelStats.java"
+  "$project_dir/tests/FramePixelStatsTest.java"
 )
 if command -v javac >/dev/null 2>&1; then
   javac -d "$build_dir" "${sources[@]}"
@@ -38,6 +48,10 @@ else
 fi
 java -cp "$build_dir" InstallerSmokeTest
 java -cp "$build_dir" dev.rb4dx.standalone.GameProbeOptionsTest
+java -cp "$build_dir" dev.rb4dx.standalone.ShaderCachePathsTest
+java -cp "$build_dir" dev.rb4dx.standalone.GpuDriverChoiceTest
+java -cp "$build_dir" dev.rb4dx.standalone.BachataAudioProtocolTest
+java -cp "$build_dir" dev.rb4dx.standalone.ProcessLogDrainTest
 java -cp "$build_dir" dev.rb4dx.standalone.ProbeStopTokenTest
 java -cp "$build_dir" dev.rb4dx.standalone.Ps4InputStateTest
 java -cp "$build_dir" dev.rb4dx.standalone.InputFramePumpTest
@@ -49,6 +63,7 @@ java -cp "$build_dir" dev.rb4dx.standalone.GpuWaitSummaryTest
 java -cp "$build_dir" com.winlator.xenvironment.components.FramePreviewTraceTest
 java -cp "$build_dir" com.winlator.xenvironment.components.LiveHeartbeatTrackerTest
 java -cp "$build_dir" com.winlator.xenvironment.components.LiveFrameGeometryTest
+java -cp "$build_dir" com.winlator.xenvironment.components.FramePixelStatsTest
 c++ -std=c++20 -Wall -Wextra -Werror \
   -I "$project_dir/native/patches" \
   "$project_dir/tests/VulkanDispatchGuardTest.cpp" \
@@ -61,6 +76,11 @@ c++ -std=c++20 -Wall -Wextra -Werror \
   -o "$build_dir/GpuWaitBackoffTest"
 "$build_dir/GpuWaitBackoffTest"
 echo "PASS: GPU wait backoff only applies to solitary prolonged memory waits"
+cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
+  -I "$project_dir/tests/include" \
+  -c "$project_dir/app/src/main/cpp/native_audio_socket.c" \
+  -o "$build_dir/native_audio_socket.o"
+echo "PASS: native Bachata audio AF_UNIX socket builds warning-free"
 cc -std=c11 -Wall -Wextra -Werror \
   -I "$project_dir/native/vortek" \
   "$project_dir/tests/VortekFrameRingTest.c" \
@@ -103,9 +123,11 @@ python3 "$project_dir/tests/test_native_extended_listener.py"
 python3 "$project_dir/tests/test_extended_probe_wiring.py"
 python3 "$project_dir/tests/test_extended_apk_package.py"
 python3 "$project_dir/tests/test_runtime_verifier.py"
+python3 "$project_dir/tests/test_bachata_driver_extraction.py"
 python3 "$project_dir/tests/test_gpu_wait_trace_package.py"
 python3 "$project_dir/tests/test_gpu_wait_backoff_package.py"
 python3 "$project_dir/tests/test_shader_compat_package.py"
+python3 "$project_dir/tests/test_bachata_play_wiring.py"
 python3 "$project_dir/tests/test_live_heartbeat_wiring.py"
 python3 "$project_dir/tests/test_live_heartbeat_package.py"
 python3 "$project_dir/tests/test_live_surface_transport_wiring.py"

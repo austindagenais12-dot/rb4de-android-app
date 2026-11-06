@@ -35,6 +35,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     private final AtomicInteger windowUpdates = new AtomicInteger();
     private final LiveHeartbeatTracker heartbeat = new LiveHeartbeatTracker(750);
     private volatile FramePreviewTrace lastPreviewTrace = new FramePreviewTrace();
+    private volatile String pixelClassification = "NOT_SAMPLED";
     private volatile boolean previewOnly;
     private long serverPtr;
 
@@ -73,7 +74,9 @@ public final class VortekRendererComponent implements AutoCloseable {
 
     public int windowUpdateCount() { return windowUpdates.get(); }
 
-    public String previewDiagnosticReport() { return lastPreviewTrace.report(); }
+    public String previewDiagnosticReport() {
+        return lastPreviewTrace.report() + "frame_pixel_classification=" + pixelClassification + '\n';
+    }
 
     public String heartbeatReport() {
         return "android_live_transport_heartbeat_attempted=" + heartbeat.attempted() + '\n'
@@ -135,6 +138,25 @@ public final class VortekRendererComponent implements AutoCloseable {
                 return false;
             }
             trace.completed("BITMAP_WRAP");
+            // Avoid CPU reads from a live GPU buffer. The server is stopped
+            // and its GPU fence completed before the readback begins.
+            try {
+                Bitmap software = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+                if (software == null) {
+                    pixelClassification = "UNREADABLE";
+                } else {
+                    try {
+                        Bitmap thumbnail = Bitmap.createScaledBitmap(software, 16, 9, false);
+                        try {
+                            int[] samples = new int[16 * 9];
+                            thumbnail.getPixels(samples, 0, 16, 0, 0, 16, 9);
+                            pixelClassification = FramePixelStats.classify(samples);
+                        } finally { thumbnail.recycle(); }
+                    } finally { software.recycle(); }
+                }
+            } catch (RuntimeException readbackError) {
+                pixelClassification = "UNREADABLE_" + readbackError.getClass().getSimpleName();
+            }
             trace.begin("CANVAS_LOCK");
             Canvas canvas = surface.lockHardwareCanvas();
             trace.completed("CANVAS_LOCK");

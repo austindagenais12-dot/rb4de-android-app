@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.12.22-shader-compat"
+        versionCode = 29
+        versionName = "0.12.23-bachata-parity"
         ndk {
             abiFilters.add("arm64-v8a")
         }
