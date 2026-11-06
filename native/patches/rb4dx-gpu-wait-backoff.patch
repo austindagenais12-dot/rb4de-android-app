@@ -1,0 +1,108 @@
+diff --git a/src/video_core/amdgpu/liverpool.cpp b/src/video_core/amdgpu/liverpool.cpp
+index f994521..cfea59d 100644
+--- a/src/video_core/amdgpu/liverpool.cpp
++++ b/src/video_core/amdgpu/liverpool.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
++#include <chrono>
+ #include <cstring>
+ #include <mutex>
+ 
+@@ -23,6 +24,7 @@
+ #include "video_core/amdgpu/pm4_packet.h"
+ #include "video_core/amdgpu/pm4_type0.h"
+ #include "video_core/amdgpu/pm4_type1.h"
++#include "video_core/amdgpu/rb4dx_gpu_wait_backoff.h"
+ #include "video_core/amdgpu/stall_log.h"
+ #include "video_core/renderdoc.h"
+ #include "video_core/renderer_vulkan/vk_rasterizer.h"
+@@ -46,6 +48,13 @@ static void MaybeRecordVideoOutLabelLock(Libraries::VideoOut::VideoOutPort* vo_p
+ static const char* dcb_task_name{"DCB_TASK"};
+ static const char* ccb_task_name{"CCB_TASK"};
+ 
++#ifdef ENABLE_BACHATA_RUNTIME
++// A yielded coroutine communicates only a transient state to its GPU dispatcher.
++// These variables are written and read by the same GPU command processor thread.
++static thread_local bool rb4dx_yielded_memory_wait = false;
++static thread_local u64 rb4dx_wait_unsuccessful_polls = 0;
++#endif
++
+ #define MAX_NAMES 56
+ static_assert(Liverpool::NumComputeRings <= MAX_NAMES);
+ 
+@@ -146,6 +155,10 @@ void Liverpool::Process(std::stop_token stoken) {
+                 task = queue.submits.front();
+             }
+             in_gfx_task.store(true, std::memory_order_relaxed);
++#ifdef ENABLE_BACHATA_RUNTIME
++            rb4dx_yielded_memory_wait = false;
++            rb4dx_wait_unsuccessful_polls = 0;
++#endif
+             task.resume();
+             in_gfx_task.store(false, std::memory_order_relaxed);
+ #ifdef ENABLE_BACHATA_RUNTIME
+@@ -165,6 +178,25 @@ void Liverpool::Process(std::stop_token stoken) {
+                 --num_submits;
+                 std::scoped_lock lock2{submit_mutex};
+                 submit_cv.notify_all();
++#ifdef ENABLE_BACHATA_RUNTIME
++            } else if (Rb4dx::ShouldBackoffGpuWait(
++                           rb4dx_yielded_memory_wait, rb4dx_wait_unsuccessful_polls,
++                           num_submits.load(std::memory_order_relaxed),
++                           num_commands.load(std::memory_order_relaxed))) {
++                // Another GPU queue could unblock this command; never sleep in that case.
++                // With only this wait outstanding, use a short timed condvar wait: a
++                // new submission wakes us immediately, a CPU memory write is polled
++                // again after at most 50us. The original PM4 comparison is untouched.
++                std::unique_lock lock{submit_mutex};
++                submit_cv.wait_for(lock, std::chrono::microseconds(50));
++                static u64 rb4dx_backoff_count = 0;
++                if (++rb4dx_backoff_count % 10'000 == 0) {
++                    LOG_WARNING(Render_Vulkan,
++                                "RB4DX_WAIT_BACKOFF sleeps={} wait_polls={} submits={}",
++                                rb4dx_backoff_count, rb4dx_wait_unsuccessful_polls,
++                                num_submits.load(std::memory_order_relaxed));
++                }
++#endif
+             }
+         }
+ 
+@@ -981,6 +1013,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
+                 }
+ #endif
+                 u64 wait_iterations = 0;
++#ifdef ENABLE_BACHATA_RUNTIME
++                const auto wait_started = std::chrono::steady_clock::now();
++#endif
+                 while (!wait_reg_mem->Test(regs.reg_array)) {
+ #ifdef ENABLE_BACHATA_RUNTIME
+                     if (ShouldLogStallIteration(++wait_iterations)) {
+@@ -998,9 +1033,26 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
+                                     value, wait_reg_mem->ref, wait_reg_mem->mask,
+                                     static_cast<u32>(wait_reg_mem->function.Value()));
+                     }
++#endif
++#ifdef ENABLE_BACHATA_RUNTIME
++                    // Only a repeated wait can enable dispatcher-side backoff.
++                    rb4dx_yielded_memory_wait = true;
++                    rb4dx_wait_unsuccessful_polls = wait_iterations;
+ #endif
+                     YIELD_GFX();
+                 }
++#ifdef ENABLE_BACHATA_RUNTIME
++                if (wait_iterations >= 100'000) {
++                    const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
++                                                std::chrono::steady_clock::now() - wait_started)
++                                                .count();
++                    LOG_WARNING(Render_Vulkan,
++                                "RB4DX_WAIT_RESOLVED queue=gfx addr={:#x} "
++                                "polls={} elapsed_us={} value={:#x}",
++                                reinterpret_cast<uintptr_t>(wait_addr), wait_iterations,
++                                elapsed_us, *wait_reg_mem->Address<const u32*>());
++                }
++#endif
+                 break;
+             }
+             case PM4ItOpcode::IndirectBuffer: {

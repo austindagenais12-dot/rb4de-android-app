@@ -3,7 +3,7 @@ name: Build ARM64 emulator runtime (experimental)
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/v0130-feedback-loop-dispatch, feature/v01213-gpu-wait-trace]
+    branches: [main, fix/v0130-feedback-loop-dispatch, feature/v01213-gpu-wait-trace, feature/v01219-gpu-wait-backoff]
     paths:
       - '.github/workflows/native-runtime.yml'
       - 'scripts/build-native-runtime.sh'
@@ -12,6 +12,8 @@ on:
       - 'native/patches/rb4dx-vulkan-vertex-dispatch-fallback.patch'
       - 'native/patches/rb4dx_dispatch_guard.h'
       - 'native/patches/rb4dx-gpu-wait-trace.patch'
+      - 'native/patches/rb4dx-gpu-wait-backoff.patch'
+      - 'native/patches/rb4dx_gpu_wait_backoff.h'
 
 # Automatically replace a stale in-flight build when a fix is pushed.
 concurrency:
@@ -67,13 +69,25 @@ jobs:
             native-source/src/video_core/renderer_vulkan/vk_instance.cpp
 
       - name: Instrument GPU wait entry without bypassing synchronization
-        if: github.ref_name == 'feature/v01213-gpu-wait-trace'
+        if: github.ref_name == 'feature/v01213-gpu-wait-trace' || github.ref_name == 'feature/v01219-gpu-wait-backoff'
         shell: bash
         run: |
           set -euo pipefail
           git -C native-source apply --check ../native/patches/rb4dx-gpu-wait-trace.patch
           git -C native-source apply ../native/patches/rb4dx-gpu-wait-trace.patch
           grep -n 'RB4DX_WAIT_BEGIN' native-source/src/video_core/amdgpu/liverpool.cpp
+
+      - name: Back off only solitary prolonged PM4 memory waits
+        if: github.ref_name == 'feature/v01219-gpu-wait-backoff'
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 0644 native/patches/rb4dx_gpu_wait_backoff.h \
+            native-source/src/video_core/amdgpu/rb4dx_gpu_wait_backoff.h
+          git -C native-source apply --check ../native/patches/rb4dx-gpu-wait-backoff.patch
+          git -C native-source apply ../native/patches/rb4dx-gpu-wait-backoff.patch
+          grep -n 'RB4DX_WAIT_BACKOFF\|RB4DX_WAIT_RESOLVED' \
+            native-source/src/video_core/amdgpu/liverpool.cpp
 
       # This cache holds only the completed ARM64 binaries. We save it BEFORE
       # the Vulkan translator / packaging steps, so later errors cannot waste
@@ -83,7 +97,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           # Native instrumentation changes the binary; never reuse v0.12.12's cached core.
-          key: ${{ github.ref_name == 'feature/v01213-gpu-wait-trace' && 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v5-rb4dx-gpu-wait-trace' || 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v4-rb4dx-sanitizer-vertex-feedback' }}
+          key: ${{ github.ref_name == 'feature/v01219-gpu-wait-backoff' && 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v6-rb4dx-gpu-wait-backoff' || (github.ref_name == 'feature/v01213-gpu-wait-trace' && 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v5-rb4dx-gpu-wait-trace' || 'rb4dx-arm64-core-be6bc2e9c60799e071dd2fafa6216e8d80ec619c-v4-rb4dx-sanitizer-vertex-feedback') }}
           path: |
             native-source/runtime/build/shadps4-arm64-stage
             native-source/runtime/build/fexcore-smoke-stage

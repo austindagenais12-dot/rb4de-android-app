@@ -52,6 +52,12 @@ c++ -std=c++20 -Wall -Wextra -Werror \
   -o "$build_dir/VulkanDispatchGuardTest"
 "$build_dir/VulkanDispatchGuardTest"
 echo "PASS: optional Vulkan extension requires a valid dispatcher entrypoint"
+c++ -std=c++20 -Wall -Wextra -Werror \
+  -I "$project_dir/native/patches" \
+  "$project_dir/tests/GpuWaitBackoffTest.cpp" \
+  -o "$build_dir/GpuWaitBackoffTest"
+"$build_dir/GpuWaitBackoffTest"
+echo "PASS: GPU wait backoff only applies to solitary prolonged memory waits"
 cc -std=c11 -Wall -Wextra -Werror \
   -I "$project_dir/native/vortek" \
   "$project_dir/tests/VortekFrameRingTest.c" \
