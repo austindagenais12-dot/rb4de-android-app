@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.12.17-evidence-preservation"
+        versionCode = 24
+        versionName = "0.12.18-high-signal-logs"
         ndk {
             abiFilters.add("arm64-v8a")
         }

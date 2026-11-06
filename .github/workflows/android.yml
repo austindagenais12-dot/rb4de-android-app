@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation, feature/v01218-high-signal-logs]
     paths:
       - 'app/**'
       - 'native/vortek/**'
@@ -49,7 +49,8 @@ jobs:
           elif [[ "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" || \
                   "$GITHUB_REF_NAME" == "feature/v01215-controller-input" || \
                   "$GITHUB_REF_NAME" == "feature/v01216-extended-startup" || \
-                  "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" ]]; then
+                  "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" || \
+                  "$GITHUB_REF_NAME" == "feature/v01218-high-signal-logs" ]]; then
             # Use the exact already-verified v0.12.13 runtime, not a mutable latest-success.
             run_id="42119601182"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01213-gpu-wait-trace" ]]; then
@@ -71,7 +72,8 @@ jobs:
                   "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" || \
                   "$GITHUB_REF_NAME" == "feature/v01215-controller-input" || \
                   "$GITHUB_REF_NAME" == "feature/v01216-extended-startup" || \
-                  "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" ) && \
+                  "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" || \
+                  "$GITHUB_REF_NAME" == "feature/v01218-high-signal-logs" ) && \
                 "$native_branch" != "feature/v01213-gpu-wait-trace" ]]; then
             echo "Refusing non-diagnostic native runtime: $native_branch" >&2
             exit 1
@@ -79,7 +81,8 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" || \
                 "$GITHUB_REF_NAME" == "feature/v01215-controller-input" || \
                 "$GITHUB_REF_NAME" == "feature/v01216-extended-startup" || \
-                "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" ]]; then
+                "$GITHUB_REF_NAME" == "feature/v01217-evidence-preservation" || \
+                "$GITHUB_REF_NAME" == "feature/v01218-high-signal-logs" ]]; then
             native_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
             native_conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
             if [[ "$native_sha" != "18bbb0bc0c914f86816513cf4d10b99178984524" || \
@@ -325,7 +328,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='23' versionName='0.12.17-evidence-preservation'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='24' versionName='0.12.18-high-signal-logs'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -336,5 +339,5 @@ jobs:
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-evidence-preservation-debug
+          name: rb4dx-high-signal-logs-debug
           path: app/build/outputs/apk/debug/*.apk

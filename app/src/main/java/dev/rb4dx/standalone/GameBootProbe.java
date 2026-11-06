@@ -354,13 +354,17 @@ final class GameBootProbe {
         }
         try {
             Path destination = files.resolve("diagnostics/rb4dx-last-startup.log");
-            StartupLogStore.Retention saved = StartupLogStore.retainHeadAndTail(
+            StartupLogStore.Retention saved = StartupLogStore.retainReadableDiagnostics(
                     capture, destination, StartupLogStore.MAX_SAVED_BYTES);
             return new Result(report + "full_log_available=true\n"
                     + "full_log_source_bytes=" + saved.sourceBytes + '\n'
+                    + "full_log_filtered_source_bytes=" + saved.filteredSourceBytes + '\n'
+                    + "full_log_omitted_pad_poll_lines=" + saved.omittedPadPollLines + '\n'
                     + "full_log_saved_bytes=" + saved.savedBytes + '\n'
                     + "full_log_truncated=" + saved.truncated + '\n'
-                    + "full_log_capture=" + (saved.truncated ? "START_AND_END" : "COMPLETE")
+                    + "full_log_capture=" + (saved.omittedPadPollLines > 0
+                            ? saved.truncated ? "PAD_POLL_FILTERED_START_AND_END" : "PAD_POLL_FILTERED"
+                            : saved.truncated ? "START_AND_END" : "COMPLETE")
                     + '\n', saved.path);
         } catch (IOException logError) {
             // Never conceal the actual guest crash because storing its log failed.

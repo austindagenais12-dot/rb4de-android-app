@@ -44,6 +44,54 @@ public final class StartupLogStoreTest {
         check(retained.endsWith("LATE: PM4 WAIT_REG_MEM stalled\n"),
                 "diagnostics must preserve the end of the run");
 
+        // The actual v0.12.17 log lost its mid-run GPU events: repeated
+        // scePadOpen/reset/close/stub entries occupied almost all 8 MB.
+        String noisyPad = "[Lib.Pad] <Info> (joypad_reader) pad.cpp:357 scePadOpen: "
+                + "scePadOpen user_id=1000 type=2 index=0 initialized=true\n"
+                + "[Lib.Pad] <Info> (joypad_reader) pad.cpp:632 "
+                + "scePadResetOrientation: called handle=20\n"
+                + "[Lib.Pad] <Error> (joypad_reader) pad.cpp:106 "
+                + "scePadDeviceClassGetExtendedInformation: (STUBBED) called\n"
+                + "[Lib.Pad] <Warning> (joypad_reader) pad.cpp:82 scePadClose: called, handle: 20\n";
+        String bridgeError = "[Render.Vulkan] PM4 WAIT_REG_MEM stalled "
+                + "queue=gfx address=0x2e0f927e0\n";
+        String newLog = "EARLY: Vulkan initialization\n"
+                + noisyPad.repeat(20)
+                + bridgeError
+                + "[Lib.Pad] <Error> (joypad_reader) pad.cpp:999 scePadGetInfo: "
+                + "an uncommon error that must not be removed\n"
+                + noisyPad.repeat(20)
+                + "LATE: normal process termination\n";
+        Files.writeString(source, newLog);
+        StartupLogStore.Retention useful = StartupLogStore.retainReadableDiagnostics(
+                source.toFile(), saved, 700);
+        String usefulText = Files.readString(saved);
+        check(usefulText.contains(bridgeError), "mid-run GPU stall must survive controller spam");
+        check(usefulText.contains("scePadOpen"), "keep first representative pad-open message");
+        check(usefulText.contains("scePadResetOrientation"), "keep first representative reset message");
+        check(usefulText.contains("scePadClose"), "keep first representative pad-close message");
+        check(usefulText.contains("scePadDeviceClassGetExtendedInformation"),
+                "keep first representative device-class stub message");
+        check(usefulText.contains("scePadGetInfo: an uncommon error"),
+                "do not filter unrelated pad errors");
+        check(usefulText.contains("repeated controller polling lines omitted"),
+                "summarize removed controller polling without misrepresenting the log");
+        check(useful.omittedPadPollLines > 100,
+                "the diagnostic should report how much polling it removed");
+        check(useful.sourceBytes == Files.size(source),
+                "report original capture bytes, not only filtered input bytes");
+        check(useful.savedBytes <= 700, "filtered log must still obey the byte limit");
+        check(Files.readString(source).equals(newLog), "never mutate the native capture file");
+
+        // Nothing is filtered if there are no known repetitive poll lines.
+        Files.writeString(source, shortLog);
+        StartupLogStore.Retention noFiltering = StartupLogStore.retainReadableDiagnostics(
+                source.toFile(), saved, 128);
+        check(Files.readString(saved).equals(shortLog),
+                "unrelated small diagnostics remain byte-for-byte unchanged");
+        check(noFiltering.omittedPadPollLines == 0,
+                "do not claim filtering when none occurred");
+
         Files.writeString(source, "replacement\n");
         StartupLogStore.retainHeadAndTail(source.toFile(), saved, 128);
         check(Files.readString(saved).equals("replacement\n"),
