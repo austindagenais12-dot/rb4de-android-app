@@ -1,24 +1,32 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 // App-private AF_UNIX endpoint for the pinned Vortek Android JNI renderer.
-// The backend is real; its GPU images are not yet presented on an Android view.
+// Android 16 live output is opt-in and fenced; the stopped-producer preview remains.
 #define _GNU_SOURCE
 #include <jni.h>
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
 #include <android/log.h>
+#include <android/native_window_jni.h>
+#include <android/surface_control.h>
+#include <android/api-level.h>
+#include <dlfcn.h>
 #include <errno.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include "bachata_vortek_protocol.h"
 #include "rb4dx_window_images.h"
+#include "rb4dx_frame_ring.h"
 #include "vulkan_wrapper.h"
 
 #define TAG "RB4DX.Vortek.Server"
@@ -58,7 +66,322 @@ struct Server {
 };
 
 static pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t buffer_available = PTHREAD_COND_INITIALIZER;
 static Rb4dxWindowImages window_images;
+
+// NDK 26 does not declare API 36's callback-aware buffer submission. Resolve
+// it dynamically so the APK can continue to run on earlier Android releases.
+typedef void (*Rb4dxOnBufferRelease)(void*, int);
+typedef void (*SetBufferWithReleaseFn)(ASurfaceTransaction*, ASurfaceControl*,
+        AHardwareBuffer*, int, void*, Rb4dxOnBufferRelease);
+static SetBufferWithReleaseFn set_buffer_with_release;
+
+typedef struct {
+    uint64_t epoch;
+    int window_id;
+    Rb4dxFrameLease lease;
+    AHardwareBuffer* held_buffer;
+} ReleaseContext;
+
+static ASurfaceControl* live_control;
+static Rb4dxFrameRing live_ring;
+static Rb4dxFrameLease image_leases[3];
+static uint64_t live_epoch;
+static int live_window_id;
+static bool live_active;
+static bool live_surface_attached;
+static unsigned int live_frames_gpu_complete;
+static unsigned int live_frames_posted;
+static unsigned int live_frames_released;
+static unsigned int live_frames_dropped;
+static unsigned int live_gpu_fence_timeouts;
+static unsigned int live_gpu_fence_failures;
+static unsigned int live_release_fence_timeouts;
+static unsigned int live_pending_callbacks;
+static char live_last_error[64] = "NONE";
+
+static void live_error_locked(const char* error) {
+    snprintf(live_last_error, sizeof(live_last_error), "%s", error);
+}
+
+// Android's buffer release callback can arrive on an arbitrary Binder thread.
+// The callback must wait for the compositor's fence, then and only then free
+// the producer slot. The bounded timeout intentionally fails closed.
+static void on_live_buffer_released(void* argument, int release_fence_fd) {
+    ReleaseContext* callback = (ReleaseContext*)argument;
+    bool safe_to_reuse = release_fence_fd < 0;
+    if (release_fence_fd >= 0) {
+        struct pollfd poll_fd = {.fd = release_fence_fd, .events = POLLIN};
+        int ready;
+        do { ready = poll(&poll_fd, 1, 3000); } while (ready < 0 && errno == EINTR);
+        safe_to_reuse = ready > 0 && (poll_fd.revents & POLLIN) != 0;
+        close(release_fence_fd);
+    }
+    pthread_mutex_lock(&buffer_mutex);
+    if (callback->epoch == live_epoch && callback->window_id == live_window_id) {
+        if (safe_to_reuse && rb4dx_frame_ring_release(&live_ring, callback->lease)) {
+            live_frames_released++;
+            pthread_cond_broadcast(&buffer_available);
+        } else if (!safe_to_reuse) {
+            live_release_fence_timeouts++;
+            live_error_locked("COMPOSITOR_RELEASE_FENCE_TIMEOUT");
+        }
+    }
+    if (live_pending_callbacks) live_pending_callbacks--;
+    pthread_mutex_unlock(&buffer_mutex);
+    AHardwareBuffer_release(callback->held_buffer);
+    free(callback);
+}
+
+static void detach_live_control(void) {
+    pthread_mutex_lock(&buffer_mutex);
+    live_active = false;
+    // Preserve evidence of a successful attachment for the completed probe.
+    rb4dx_frame_ring_close(&live_ring);
+    pthread_cond_broadcast(&buffer_available);
+    ASurfaceControl* control = live_control;
+    live_control = NULL;
+    pthread_mutex_unlock(&buffer_mutex);
+    if (control) {
+        ASurfaceTransaction* tx = ASurfaceTransaction_create();
+        if (tx) {
+            ASurfaceTransaction_setVisibility(tx, control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
+            ASurfaceTransaction_reparent(tx, control, NULL);
+            ASurfaceTransaction_apply(tx);
+            ASurfaceTransaction_delete(tx);
+        }
+        ASurfaceControl_release(control);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareLiveSurface(
+        JNIEnv* env, jobject component, jobject surface, jint image_width,
+        jint image_height, jint view_width, jint view_height) {
+    (void)component;
+    detach_live_control();
+    pthread_mutex_lock(&buffer_mutex);
+    live_epoch++;
+    // Tokens are never reused across sessions, even after the ring is reset.
+    memset(&live_ring, 0, sizeof(live_ring));
+    memset(image_leases, 0, sizeof(image_leases));
+    live_window_id = INT32_MIN;
+    live_surface_attached = false;
+    live_frames_gpu_complete = 0;
+    live_frames_posted = 0;
+    live_frames_released = 0;
+    live_frames_dropped = 0;
+    live_gpu_fence_timeouts = 0;
+    live_gpu_fence_failures = 0;
+    live_release_fence_timeouts = 0;
+    live_error_locked("NONE");
+    pthread_mutex_unlock(&buffer_mutex);
+    if (!surface || image_width <= 0 || image_height <= 0 ||
+        view_width <= 0 || view_height <= 0 || android_get_device_api_level() < 36) {
+        pthread_mutex_lock(&buffer_mutex);
+        live_error_locked("ANDROID_16_SURFACE_REQUIRED");
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    set_buffer_with_release = (SetBufferWithReleaseFn)
+            dlsym(RTLD_DEFAULT, "ASurfaceTransaction_setBufferWithRelease");
+    if (!set_buffer_with_release) {
+        pthread_mutex_lock(&buffer_mutex);
+        live_error_locked("API_36_RELEASE_CALLBACK_UNAVAILABLE");
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+    if (!window) return JNI_FALSE;
+    ASurfaceControl* control = ASurfaceControl_createFromWindow(window, "RB4DX Live Game Frame");
+    ANativeWindow_release(window);
+    if (!control) {
+        pthread_mutex_lock(&buffer_mutex);
+        live_error_locked("SURFACE_CONTROL_CREATION_FAILED");
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    ASurfaceTransaction* tx = ASurfaceTransaction_create();
+    if (!tx) {
+        ASurfaceControl_release(control);
+        return JNI_FALSE;
+    }
+    ASurfaceTransaction_setScale(tx, control, (float)view_width / (float)image_width,
+            (float)view_height / (float)image_height);
+    ASurfaceTransaction_setVisibility(tx, control, ASURFACE_TRANSACTION_VISIBILITY_SHOW);
+    ASurfaceTransaction_apply(tx);
+    ASurfaceTransaction_delete(tx);
+    pthread_mutex_lock(&buffer_mutex);
+    live_control = control;
+    live_active = true;
+    live_surface_attached = true;
+    pthread_mutex_unlock(&buffer_mutex);
+    LOG("live_surface_attached image=%dx%d view=%dx%d epoch=%llu", image_width,
+            image_height, view_width, view_height, (unsigned long long)live_epoch);
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeDetachLiveSurface(
+        JNIEnv* env, jobject component) {
+    (void)env; (void)component;
+    detach_live_control();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeAcquireWindowImage(
+        JNIEnv* env, jobject component, jint window_id, jint count, jlong timeout_ns) {
+    (void)env; (void)component;
+    pthread_mutex_lock(&buffer_mutex);
+    // -2: legacy path, not live. -1: bounded timeout, Vulkan VK_TIMEOUT.
+    if (!live_active || count < 2 || count > 3) {
+        if (live_active && (count < 2 || count > 3))
+            live_error_locked("UNSUPPORTED_SWAPCHAIN_IMAGE_COUNT");
+        pthread_mutex_unlock(&buffer_mutex);
+        return -2;
+    }
+    if (!live_ring.initialized) {
+        if (!rb4dx_frame_ring_init_seeded(&live_ring, (uint8_t)count, live_epoch << 40)) {
+            pthread_mutex_unlock(&buffer_mutex);
+            return -1;
+        }
+        live_window_id = window_id;
+    }
+    if (live_window_id != window_id || live_ring.capacity != count) {
+        pthread_mutex_unlock(&buffer_mutex);
+        return -2;
+    }
+    // Keep the server stoppable even if a guest supplies UINT64_MAX.
+    // UINT64_MAX is Vulkan's 'infinite' timeout and arrives as a negative
+    // signed JNI long. Never turn that into an immediate acquire failure.
+    uint64_t bounded_ns = timeout_ns < 0 ? 1000000000ULL : (uint64_t)timeout_ns;
+    if (bounded_ns > 1000000000ULL) bounded_ns = 1000000000ULL;
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += (time_t)(bounded_ns / 1000000000ULL);
+    deadline.tv_nsec += (long)(bounded_ns % 1000000000ULL);
+    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
+    Rb4dxFrameLease lease;
+    bool acquired = rb4dx_frame_ring_acquire(&live_ring, &lease);
+    while (live_active && !acquired) {
+        if (bounded_ns == 0 || pthread_cond_timedwait(&buffer_available, &buffer_mutex,
+                    &deadline) == ETIMEDOUT) break;
+        acquired = rb4dx_frame_ring_acquire(&live_ring, &lease);
+    }
+    if (!live_active || live_ring.closed) {
+        pthread_mutex_unlock(&buffer_mutex);
+        return -1;
+    }
+    if (acquired) image_leases[lease.slot] = lease;
+    else live_frames_dropped++;
+    pthread_mutex_unlock(&buffer_mutex);
+    return acquired ? (jint)lease.slot : -1;
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeCancelWindowImage(
+        JNIEnv* env, jobject component, jint window_id, jint index) {
+    (void)env; (void)component;
+    pthread_mutex_lock(&buffer_mutex);
+    if (window_id == live_window_id && index >= 0 && index < live_ring.capacity &&
+        rb4dx_frame_ring_cancel(&live_ring, image_leases[index])) {
+        live_frames_dropped++;
+        pthread_cond_broadcast(&buffer_available);
+    }
+    pthread_mutex_unlock(&buffer_mutex);
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeGpuPresentFailure(
+        JNIEnv* env, jobject component, jint window_id, jint image_index, jint vk_result) {
+    (void)env; (void)component; (void)image_index;
+    pthread_mutex_lock(&buffer_mutex);
+    if (live_active && window_id == live_window_id) {
+        if (vk_result == 2) live_gpu_fence_timeouts++; // VK_TIMEOUT
+        else live_gpu_fence_failures++;
+        snprintf(live_last_error, sizeof(live_last_error), "VK_PRESENT_WAIT_RESULT_%d", vk_result);
+    }
+    pthread_mutex_unlock(&buffer_mutex);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeLivePublish(
+        JNIEnv* env, jobject component, jint window_id, jint index) {
+    (void)env; (void)component;
+    pthread_mutex_lock(&buffer_mutex);
+    if (!live_active || window_id != live_window_id || index < 0 ||
+        index >= live_ring.capacity || !live_control) {
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    const Rb4dxFrameLease lease = image_leases[index];
+    if (!rb4dx_frame_ring_gpu_complete(&live_ring, lease)) {
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    live_frames_gpu_complete++;
+    AHardwareBuffer* buffer = NULL;
+    for (size_t i=0; i<window_images.count; ++i) {
+        if (window_images.images[i].window_id == window_id &&
+            window_images.images[i].image_index == (uint8_t)index) {
+            buffer = (AHardwareBuffer*)window_images.images[i].handle;
+            break;
+        }
+    }
+    ReleaseContext* context = buffer ? calloc(1, sizeof(*context)) : NULL;
+    ASurfaceTransaction* tx = context ? ASurfaceTransaction_create() : NULL;
+    if (!tx || !rb4dx_frame_ring_present(&live_ring, lease)) {
+        if (tx) ASurfaceTransaction_delete(tx);
+        free(context);
+        rb4dx_frame_ring_cancel(&live_ring, lease);
+        live_frames_dropped++;
+        pthread_cond_broadcast(&buffer_available);
+        pthread_mutex_unlock(&buffer_mutex);
+        return JNI_FALSE;
+    }
+    ASurfaceControl* control = live_control;
+    ASurfaceControl_acquire(control);
+    AHardwareBuffer_acquire(buffer);
+    *context = (ReleaseContext){.epoch=live_epoch,.window_id=window_id,
+            .lease=lease,.held_buffer=buffer};
+    live_pending_callbacks++;
+    pthread_mutex_unlock(&buffer_mutex);
+    set_buffer_with_release(tx, control, buffer, -1, context, on_live_buffer_released);
+    ASurfaceTransaction_apply(tx);
+    ASurfaceTransaction_delete(tx);
+    ASurfaceControl_release(control);
+    pthread_mutex_lock(&buffer_mutex);
+    live_frames_posted++;
+    pthread_mutex_unlock(&buffer_mutex);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_winlator_xenvironment_components_VortekRendererComponent_nativeLiveReport(
+        JNIEnv* env, jobject component) {
+    (void)component;
+    char report[650];
+    pthread_mutex_lock(&buffer_mutex);
+    snprintf(report, sizeof(report),
+            "android_surface_attached=%s\n"
+            "android_live_game_frame_posted=%s\n"
+            "android_live_game_frames_gpu_complete=%u\n"
+            "android_live_game_frames_posted=%u\n"
+            "android_live_game_frames_released=%u\n"
+            "android_live_game_frames_dropped=%u\n"
+            "android_live_gpu_fence_timeouts=%u\n"
+            "android_live_gpu_fence_failures=%u\n"
+            "android_live_release_fence_timeouts=%u\n"
+            "android_live_pending_callbacks=%u\n"
+            "android_live_last_error=%s\n",
+            live_surface_attached ? "true" : "false", live_frames_posted ? "true" : "false",
+            live_frames_gpu_complete, live_frames_posted, live_frames_released,
+            live_frames_dropped, live_gpu_fence_timeouts, live_gpu_fence_failures,
+            live_release_fence_timeouts, live_pending_callbacks,
+            live_last_error);
+    pthread_mutex_unlock(&buffer_mutex);
+    return (*env)->NewStringUTF(env, report);
+}
 
 static bool read_all(int fd, void* destination, size_t bytes) {
     unsigned char* p = destination;

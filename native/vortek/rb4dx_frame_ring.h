@@ -34,7 +34,11 @@ typedef struct {
 } Rb4dxFrameRing;
 
 bool rb4dx_frame_ring_init(Rb4dxFrameRing *ring, uint8_t capacity);
+/* For new sessions, seed tokens from a monotonically increasing session epoch. */
+bool rb4dx_frame_ring_init_seeded(Rb4dxFrameRing *ring, uint8_t capacity, uint64_t token_seed);
 bool rb4dx_frame_ring_acquire(Rb4dxFrameRing *ring, Rb4dxFrameLease *out);
+/* Only unpublished producer frames may be cancelled. */
+bool rb4dx_frame_ring_cancel(Rb4dxFrameRing *ring, Rb4dxFrameLease lease);
 bool rb4dx_frame_ring_gpu_complete(Rb4dxFrameRing *ring, Rb4dxFrameLease lease);
 bool rb4dx_frame_ring_present(Rb4dxFrameRing *ring, Rb4dxFrameLease lease);
 bool rb4dx_frame_ring_release(Rb4dxFrameRing *ring, Rb4dxFrameLease lease);

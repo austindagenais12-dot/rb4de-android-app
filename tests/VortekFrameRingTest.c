@@ -127,6 +127,41 @@ static void test_close_invalidates_all_outstanding_leases(void) {
     assert(!rb4dx_frame_ring_release(&ring, presented));
 }
 
+static void test_cancel_unpublished_frame_without_reclaiming_consumer(void) {
+    Rb4dxFrameRing ring = new_ring(2);
+    Rb4dxFrameLease unfinished, published, reused;
+    assert(rb4dx_frame_ring_acquire(&ring, &unfinished));
+    assert(rb4dx_frame_ring_cancel(&ring, unfinished));
+    assert(!rb4dx_frame_ring_cancel(&ring, unfinished));
+    assert(rb4dx_frame_ring_acquire(&ring, &reused));
+    assert(reused.slot == unfinished.slot && reused.token != unfinished.token);
+    assert(rb4dx_frame_ring_gpu_complete(&ring, reused));
+    assert(rb4dx_frame_ring_cancel(&ring, reused));
+    assert(rb4dx_frame_ring_acquire(&ring, &published));
+    assert(rb4dx_frame_ring_gpu_complete(&ring, published));
+    assert(rb4dx_frame_ring_present(&ring, published));
+    assert(!rb4dx_frame_ring_cancel(&ring, published));
+    assert(rb4dx_frame_ring_release(&ring, published));
+}
+
+static void test_new_session_rejects_previous_session_release(void) {
+    Rb4dxFrameRing ring = {0};
+    assert(rb4dx_frame_ring_init_seeded(&ring, 2, 0x100000000ULL));
+    Rb4dxFrameLease previous, current;
+    assert(rb4dx_frame_ring_acquire(&ring, &previous));
+    assert(rb4dx_frame_ring_gpu_complete(&ring, previous));
+    assert(rb4dx_frame_ring_present(&ring, previous));
+    rb4dx_frame_ring_close(&ring);
+    memset(&ring, 0, sizeof(ring));
+    assert(rb4dx_frame_ring_init_seeded(&ring, 2, 0x200000000ULL));
+    assert(rb4dx_frame_ring_acquire(&ring, &current));
+    assert(!rb4dx_frame_ring_release(&ring, previous));
+    assert(current.token != previous.token);
+    assert(rb4dx_frame_ring_gpu_complete(&ring, current));
+    assert(rb4dx_frame_ring_present(&ring, current));
+    assert(rb4dx_frame_ring_release(&ring, current));
+}
+
 int main(void) {
     test_rejects_invalid_inputs_and_capacities();
     test_full_ring_never_reuses_a_busy_slot();
@@ -134,6 +169,8 @@ int main(void) {
     test_out_of_order_and_duplicate_callbacks_are_rejected();
     test_old_generation_release_cannot_reclaim_new_frame();
     test_close_invalidates_all_outstanding_leases();
+    test_cancel_unpublished_frame_without_reclaiming_consumer();
+    test_new_session_rejects_previous_session_release();
     puts("PASS: bounded Vortek frame slots enforce exclusive producer/consumer ownership");
     return 0;
 }

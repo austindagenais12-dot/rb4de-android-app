@@ -20,8 +20,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * The JNI names are intentionally compatible with the upstream Vortek
  * renderer. This is an actual Vulkan command server. Its first Android
- * screen-output milestones are a diagnostic live callback heartbeat and a
- * post-stop still-frame preview. Continuous game-video output is not ready.
+ * Experimental Android 16 live frame output uses native producer and
+ * compositor-release fences. Earlier Android versions retain the heartbeat
+ * and stopped-producer preview.
  */
 public final class VortekRendererComponent implements AutoCloseable {
     // Retain the GPU source until a later preview replaces it so Android's
@@ -78,7 +79,7 @@ public final class VortekRendererComponent implements AutoCloseable {
                 + "android_live_transport_heartbeat_posted=" + heartbeat.posted() + '\n'
                 + "android_live_transport_heartbeat_failed=" + heartbeat.failed() + '\n'
                 + "android_live_transport_heartbeat_last_failure=" + heartbeat.lastFailure() + '\n'
-                + "android_live_game_frame_posted=false\n";
+                + nativeLiveReport();
     }
 
     /**
@@ -88,6 +89,9 @@ public final class VortekRendererComponent implements AutoCloseable {
      */
     public synchronized boolean stopAndRenderFinalFrame() {
         previewOnly = true;
+        // Wake any producer blocked waiting for Android to release a slot,
+        // then remove the child SurfaceControl before drawing the still image.
+        nativeDetachLiveSurface();
         FramePreviewTrace trace = new FramePreviewTrace();
         lastPreviewTrace = trace;
         trace.begin("SERVER_STOP");
@@ -174,6 +178,12 @@ public final class VortekRendererComponent implements AutoCloseable {
     public synchronized boolean start(String privateSocketPath) {
         if (serverPtr != 0) return true;
         previewOnly = false;
+        if (previewHolder != null && previewHolder.getSurface() != null
+                && previewHolder.getSurface().isValid()) {
+            Rect frame = previewHolder.getSurfaceFrame();
+            nativePrepareLiveSurface(previewHolder.getSurface(), width, height,
+                    Math.max(1, frame.width()), Math.max(1, frame.height()));
+        }
         serverPtr = startNativeServer(privateSocketPath, options);
         return serverPtr != 0;
     }
@@ -197,6 +207,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     @Override
     public synchronized void close() {
         previewOnly = true;
+        nativeDetachLiveSurface();
         if (serverPtr != 0) {
             stopNativeServer(serverPtr);
             serverPtr = 0;
@@ -217,15 +228,34 @@ public final class VortekRendererComponent implements AutoCloseable {
         return acquireNativeBuffer(windowId, imageIndex, preferBgra, width, height);
     }
 
-    // Called by the upstream renderer on present. Never sample the backing
-    // HardwareBuffer here: Vortek has not supplied a completed GPU fence.
-    // Instead paint independent diagnostic pixels to verify the live surface.
+    // Called by patched upstream swapchain acquisition. -2 means the phone
+    // does not support the experimental fenced path; pinned Vortek falls back
+    // to image 0 and the diagnostic heartbeat is still available.
+    @SuppressWarnings("unused")
+    private int acquireWindowImage(int windowId, int imageCount, long timeoutNs) {
+        return nativeAcquireWindowImage(windowId, imageCount, timeoutNs);
+    }
+
+    @SuppressWarnings("unused")
+    private void cancelWindowImage(int windowId, int imageIndex) {
+        nativeCancelWindowImage(windowId, imageIndex);
+    }
+
+    @SuppressWarnings("unused")
+    private void recordWindowGpuPresentFailure(int windowId, int imageIndex, int vkResult) {
+        nativeGpuPresentFailure(windowId, imageIndex, vkResult);
+    }
+
+    // Only patched Vortek calls this after submitting waits for the guest's
+    // present semaphores AND observing the real GPU fence signal.
     @SuppressWarnings("unused")
     private void updateWindowContent(int windowId, int imageIndex) {
         if (nativeNotePresentedImage(windowId, imageIndex)) {
             lastUpdatedWindow.set(windowId);
             windowUpdates.incrementAndGet();
-            if (!previewOnly) renderLiveHeartbeat();
+            if (!previewOnly && !nativeLivePublish(windowId, imageIndex)) {
+                renderLiveHeartbeat();
+            }
         }
     }
 
@@ -290,6 +320,14 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native int nativeHandshakesFailed(long ptr);
     private native long acquireNativeBuffer(int windowId, int imageIndex, boolean preferBgra, int width, int height);
     private native boolean nativeNotePresentedImage(int windowId, int imageIndex);
+    private native boolean nativePrepareLiveSurface(Surface surface, int imageWidth,
+            int imageHeight, int viewWidth, int viewHeight);
+    private native void nativeDetachLiveSurface();
+    private native int nativeAcquireWindowImage(int windowId, int imageCount, long timeoutNs);
+    private native void nativeCancelWindowImage(int windowId, int imageIndex);
+    private native void nativeGpuPresentFailure(int windowId, int imageIndex, int vkResult);
+    private native boolean nativeLivePublish(int windowId, int imageIndex);
+    private native String nativeLiveReport();
     private native HardwareBuffer getLastPresentedNativeHardwareBuffer();
     private native void releaseNativeBuffers();
 }

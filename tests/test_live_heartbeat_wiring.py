@@ -24,6 +24,6 @@ assert "android_live_transport_heartbeat_attempted=" in component
 assert "android_live_transport_heartbeat_posted=" in component
 assert "android_live_transport_heartbeat_failed=" in component
 assert "vortek.heartbeatReport()" in boot
-assert '.append("android_surface_attached=false\\n")' in boot
-assert "NOT game video" in activity
+assert 'nativeLiveReport()' in component
+assert 'experimental live game frames' in activity
 print("PASS: Vortek present callbacks drive bounded Android-only heartbeat and diagnostics")

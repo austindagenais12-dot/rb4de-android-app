@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 25
-        versionName = "0.12.19-gpu-wait-backoff"
+        versionCode = 26
+        versionName = "0.12.20-live-surface"
         ndk {
             abiFilters.add("arm64-v8a")
         }

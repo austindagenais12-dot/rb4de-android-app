@@ -23,16 +23,31 @@ static Rb4dxFrameSlot *matching_slot(Rb4dxFrameRing *ring, Rb4dxFrameLease lease
 }
 
 bool rb4dx_frame_ring_init(Rb4dxFrameRing *ring, uint8_t capacity) {
-    if (ring == NULL || (capacity != 2 && capacity != 3) || ring->initialized || ring->closed) {
+    return rb4dx_frame_ring_init_seeded(ring, capacity, 0);
+}
+
+bool rb4dx_frame_ring_init_seeded(Rb4dxFrameRing *ring, uint8_t capacity, uint64_t token_seed) {
+    if (ring == NULL || (capacity != 2 && capacity != 3) || ring->initialized || ring->closed ||
+        token_seed == UINT64_MAX) {
         return false;
     }
     for (uint8_t i = 0; i < 3; i++) {
         ring->slots[i].state = RB4DX_SLOT_FREE;
         ring->slots[i].token = 0;
     }
-    ring->next_token = 0;
+    ring->next_token = token_seed;
     ring->capacity = capacity;
     ring->initialized = true;
+    return true;
+}
+
+bool rb4dx_frame_ring_cancel(Rb4dxFrameRing *ring, Rb4dxFrameLease lease) {
+    Rb4dxFrameSlot *slot = matching_slot(ring, lease);
+    if (slot == NULL || (slot->state != RB4DX_SLOT_GPU_WRITING &&
+                         slot->state != RB4DX_SLOT_GPU_COMPLETE)) {
+        return false;
+    }
+    slot->state = RB4DX_SLOT_FREE;
     return true;
 }
 

@@ -342,11 +342,11 @@ public final class MainActivity extends Activity {
                         + "eboot.bin for the chosen bounded time, then stops it. It checks the "
                         + "game version automatically and records the startup stage, "
                         + "socket messages and emulator errors. If the GPU produced a window "
-                        + "buffer, a still-frame preview may appear in the display above after "
-                        + "the process exits. During startup a changing display-link status may "
-                        + "appear when Vortek presents. This is NOT game video or live gameplay. "
-                        + "It does NOT launch Deluxe. "
-                        + "Longer tests do not mean live game frames are available. "
+                        + "buffer, a still-frame preview may appear after the process exits. "
+                        + "Android 16 now tests experimental live game frames with GPU and "
+                        + "compositor fences. The blue diagnostic status remains a fallback if "
+                        + "a frame cannot safely be shown. This is not yet verified gameplay "
+                        + "and does NOT launch Deluxe. "
                         + "It may temporarily use substantial RAM.",
                 14, MUTED, false);
         RadioGroup probeDurationGroup = new RadioGroup(this);

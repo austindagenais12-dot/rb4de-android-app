@@ -287,7 +287,6 @@ final class GameBootProbe {
                     .append("vortek_contexts_created=").append(vortekContexts).append('\n')
                     .append("vulkan_proxy_attached=").append(vortekContexts > 0).append('\n')
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
-                    .append("android_surface_attached=false\n")
                     .append(vortek.heartbeatReport())
                     .append(inputPump.report())
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
@@ -299,7 +298,7 @@ final class GameBootProbe {
                     .append("\nSOCKET_FRAMES:\n").append(frames)
                     .append("\nCRASH_DIAGNOSTICS:\n").append(crashDiagnostics)
                     .append("\nEMULATOR_OUTPUT_TAIL:\n").append(emulatorLog)
-                    .append("\nnote=This is a startup probe; an optional still-frame preview is not live gameplay or a Deluxe launch.\n");
+                    .append("\nnote=Experimental live frame output requires observing changing game video; this remains a startup probe, not a Deluxe launch.\n");
             return retainLog("RB4DX_GAME_STARTUP_PROBE_COMPLETE\n" + report, capture, files);
         } catch (Throwable error) {
             return retainLog("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report

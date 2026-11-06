@@ -20,11 +20,11 @@ add_subdirectory("${WINLATOR_NATIVE}/winlator" "${CMAKE_BINARY_DIR}/upstream-win
 add_subdirectory("${WINLATOR_NATIVE}/libadrenotools" "${CMAKE_BINARY_DIR}/upstream-adrenotools")
 add_subdirectory("${VORTEK_SERVER_SOURCE}" "${CMAKE_BINARY_DIR}/upstream-vortek")
 
-add_library(rb4dx_vortek_bridge SHARED vortek_bridge.c rb4dx_window_images.c)
+add_library(rb4dx_vortek_bridge SHARED vortek_bridge.c rb4dx_window_images.c rb4dx_frame_ring.c)
 target_compile_features(rb4dx_vortek_bridge PRIVATE c_std_11)
 # The pinned Vulkan wrapper header exposes Android-only entrypoints and
 # internally compares signed loop counters with unsigned array sizes.
 target_compile_definitions(rb4dx_vortek_bridge PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_compile_options(rb4dx_vortek_bridge PRIVATE -Wall -Wextra -Werror -Wno-sign-compare)
 target_include_directories(rb4dx_vortek_bridge PRIVATE "${VORTEK_SERVER_SOURCE}/include")
-target_link_libraries(rb4dx_vortek_bridge PRIVATE vortekrenderer log android)
+target_link_libraries(rb4dx_vortek_bridge PRIVATE vortekrenderer log android dl)

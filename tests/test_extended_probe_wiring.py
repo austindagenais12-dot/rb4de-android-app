@@ -31,5 +31,5 @@ assert 'radio("Deep diagnostic • 120 seconds")' in ui
 assert 'button(body, "Stop startup test")' in ui
 assert "activeProbeStop.requestStop()" in ui
 assert "GameProbeOptions.DEFAULT_MS" in ui
-assert "NOT game video" in ui
+assert "not yet verified gameplay" in ui
 print("PASS: Android UI and emulator lifecycle support 18/60/120s and immediate Stop")
