@@ -93,6 +93,7 @@ public final class MainActivity extends Activity {
     private Button vulkanFrameButton;
     private Button copyVulkanFrameButton;
     private Button gameBootButton;
+    private Button stopGameBootButton;
     private Button copyGameBootButton;
     private Button exportGameBootLogButton;
     private SurfaceView vulkanSurface;
@@ -114,6 +115,9 @@ public final class MainActivity extends Activity {
     private boolean glibcFileRunning;
     private boolean vulkanFrameRunning;
     private boolean gameBootRunning;
+    private int chosenProbeDurationMs = GameProbeOptions.DEFAULT_MS;
+    private ProbeStopToken activeProbeStop;
+    private volatile boolean destroyed;
     private String selectedTitleId;
     private boolean busy;
 
@@ -335,21 +339,46 @@ public final class MainActivity extends Activity {
         addText(body, "9. Real Rock Band 4 startup diagnostic", 19, FG, true);
         addText(body,
                 "Starts the actual shadPS4 emulator on your selected vanilla Rock Band 4 "
-                        + "eboot.bin for at most 18 seconds, then stops it. It checks the "
+                        + "eboot.bin for the chosen bounded time, then stops it. It checks the "
                         + "game version automatically and records the startup stage, "
                         + "socket messages and emulator errors. If the GPU produced a window "
                         + "buffer, a still-frame preview may appear in the display above after "
                         + "the process exits. During startup a changing display-link status may "
                         + "appear when Vortek presents. This is NOT game video or live gameplay. "
                         + "It does NOT launch Deluxe. "
+                        + "Longer tests do not mean live game frames are available. "
                         + "It may temporarily use substantial RAM.",
                 14, MUTED, false);
+        RadioGroup probeDurationGroup = new RadioGroup(this);
+        probeDurationGroup.setOrientation(RadioGroup.VERTICAL);
+        RadioButton quickProbe = radio("Quick check • 18 seconds");
+        RadioButton extendedProbe = radio("Extended • 60 seconds (recommended)");
+        RadioButton deepProbe = radio("Deep diagnostic • 120 seconds");
+        probeDurationGroup.addView(quickProbe);
+        probeDurationGroup.addView(extendedProbe);
+        probeDurationGroup.addView(deepProbe);
+        probeDurationGroup.check(extendedProbe.getId());
+        probeDurationGroup.setOnCheckedChangeListener((group, checked) -> {
+            chosenProbeDurationMs = checked == quickProbe.getId()
+                    ? GameProbeOptions.QUICK_MS
+                    : checked == deepProbe.getId()
+                            ? GameProbeOptions.EXTENDED_MS : GameProbeOptions.DEFAULT_MS;
+        });
+        body.addView(probeDurationGroup);
         gameBootStatus = addText(body,
                 "Waiting for the verified native runtime, game folder and All files access…",
                 13, MUTED, false);
-        gameBootButton = button(body, "Test real Rock Band 4 initialization (18 sec)");
+        gameBootButton = button(body, "Start Rock Band 4 diagnostic");
         gameBootButton.setEnabled(false);
         gameBootButton.setOnClickListener(v -> runGameBootProbe());
+        stopGameBootButton = button(body, "Stop startup test");
+        stopGameBootButton.setEnabled(false);
+        stopGameBootButton.setOnClickListener(v -> {
+            if (activeProbeStop != null && activeProbeStop.requestStop()) {
+                stopGameBootButton.setEnabled(false);
+                gameBootStatus.setText("Stopping the emulator, input bridge and native listener…");
+            }
+        });
         copyGameBootButton = button(body, "Copy real-game startup report");
         copyGameBootButton.setEnabled(false);
         copyGameBootButton.setOnClickListener(
@@ -363,7 +392,7 @@ public final class MainActivity extends Activity {
         addText(body,
                 "Bluetooth and USB gamepads use the Android controller input system. "
                         + "A touch panel can send standard PS4 buttons, sticks and triggers. "
-                        + "Inputs are sent to the emulator only during the 18-second startup test. "
+                        + "Inputs are sent to the emulator during a running startup diagnostic. "
                         + "The game itself has NOT confirmed input yet.",
                 14, MUTED, false);
         controllerStatus = addText(body,
@@ -629,18 +658,26 @@ public final class MainActivity extends Activity {
         String saved = preferences.getString(GAME_URI, null);
         if (saved == null) return;
         gameBootRunning = true;
+        int durationMs = GameProbeOptions.requireDurationMs(chosenProbeDurationMs);
+        ProbeStopToken stop = new ProbeStopToken();
+        activeProbeStop = stop;
         gameBootButton.setEnabled(false);
+        stopGameBootButton.setEnabled(true);
         exportGameBootLogButton.setEnabled(false);
-        gameBootStatus.setText("Starting real shadPS4 with Rock Band 4; safety timeout 18 seconds…");
+        gameBootStatus.setText("Starting real shadPS4 with Rock Band 4; safety timeout "
+                + (durationMs / 1000) + " seconds…");
         controllerStatus.setText("Input link armed • press the controller or use the touch panel while this test runs.");
         Path runtime = preparedRuntimeDirectory;
         String title = selectedTitleId;
         Uri gameUri = Uri.parse(saved);
         runtimeWorker.submit(() -> {
             GameBootProbe.Result result = GameBootProbe.run(this, runtime, gameUri,
-                    title, vulkanSurface.getHolder(), controllerState);
+                    title, vulkanSurface.getHolder(), controllerState, durationMs, stop);
             runOnUiThread(() -> {
+                if (destroyed) return;
                 gameBootRunning = false;
+                activeProbeStop = null;
+                stopGameBootButton.setEnabled(false);
                 controllerState.reset();
                 if (touchPanel != null) touchPanel.releaseAll();
                 controllerStatus.setText("Input test finished • review input_frames_delivered_to_socket in the report. "
@@ -1028,8 +1065,10 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
+        if (activeProbeStop != null) activeProbeStop.requestStop();
         super.onDestroy();
-        // The executor may still own a ZIP stream; no cancellation or data
-        // deletion is attempted from Activity teardown.
+        // Only the startup probe is explicitly stopped; unrelated ZIP imports
+        // retain their normal ownership and never delete selected game files.
     }
 }

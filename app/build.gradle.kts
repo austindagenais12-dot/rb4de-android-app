@@ -10,16 +10,16 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.12.15-controller-input"
+        versionCode = 22
+        versionName = "0.12.16-extended-startup"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Controller-input v0.12.15 stays independent of the last verified UI APK.
-    // It cannot overwrite previous app installs or their app-private data.
+    // Upgrade the verified input-bridge test package in place, preserving its
+    // game settings and data while leaving older package variants untouched.
     signingConfigs {
         create("rb4dxCachedDebug") {
             storeFile = rootProject.file(".ci-signing/rb4dx-test.keystore")

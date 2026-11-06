@@ -4,6 +4,10 @@ project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_dir="$project_dir/tests/build"
 mkdir -p "$build_dir"
 sources=(
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/GameProbeOptions.java"
+  "$project_dir/tests/GameProbeOptionsTest.java"
+  "$project_dir/app/src/main/java/dev/rb4dx/standalone/ProbeStopToken.java"
+  "$project_dir/tests/ProbeStopTokenTest.java"
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/DeluxeInstaller.java"
   "$project_dir/app/src/main/java/dev/rb4dx/standalone/Ps4InputState.java"
   "$project_dir/tests/Ps4InputStateTest.java"
@@ -31,6 +35,8 @@ else
   java --module jdk.compiler/com.sun.tools.javac.Main -d "$build_dir" "${sources[@]}"
 fi
 java -cp "$build_dir" InstallerSmokeTest
+java -cp "$build_dir" dev.rb4dx.standalone.GameProbeOptionsTest
+java -cp "$build_dir" dev.rb4dx.standalone.ProbeStopTokenTest
 java -cp "$build_dir" dev.rb4dx.standalone.Ps4InputStateTest
 java -cp "$build_dir" dev.rb4dx.standalone.InputFramePumpTest
 java -cp "$build_dir" dev.rb4dx.standalone.TouchPadLayoutTest
@@ -64,6 +70,15 @@ cc -std=c11 -Wall -Wextra -Werror -pthread \
   "$project_dir/app/src/main/cpp/rb4dx_input_transport.c" \
   -o "$build_dir/InputTransportTest"
 "$build_dir/InputTransportTest"
+cc -std=c11 -Wall -Wextra -Werror -pthread \
+  -I "$project_dir/app/src/main/cpp" \
+  "$project_dir/tests/SocketCancelTest.c" \
+  "$project_dir/app/src/main/cpp/rb4dx_socket_cancel.c" \
+  -o "$build_dir/SocketCancelTest"
+"$build_dir/SocketCancelTest"
+python3 "$project_dir/tests/test_native_extended_listener.py"
+python3 "$project_dir/tests/test_extended_probe_wiring.py"
+python3 "$project_dir/tests/test_extended_apk_package.py"
 python3 "$project_dir/tests/test_runtime_verifier.py"
 python3 "$project_dir/tests/test_gpu_wait_trace_package.py"
 python3 "$project_dir/tests/test_live_heartbeat_wiring.py"

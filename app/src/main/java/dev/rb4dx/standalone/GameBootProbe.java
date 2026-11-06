@@ -29,7 +29,6 @@ import java.util.concurrent.TimeUnit;
  * The external game folder is only mounted as read-only /app0 by upstream.
  */
 final class GameBootProbe {
-    private static final int TIMEOUT_MS = 18000;
     private static final int MAX_LOG_BYTES = 16 * 1024;
     private static final int MAX_CRASH_LINES = 48;
 
@@ -50,10 +49,13 @@ final class GameBootProbe {
     private GameBootProbe() {}
 
     static Result run(Context context, Path runtimeDirectory, Uri gameTree,
-            String expectedTitle, SurfaceHolder previewSurface, Ps4InputState controller) {
+            String expectedTitle, SurfaceHolder previewSurface, Ps4InputState controller,
+            int timeoutMs, ProbeStopToken stop) {
+        GameProbeOptions.requireDurationMs(timeoutMs);
         StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V2\n")
                 .append("mode=REAL_SHADPS4_EMBEDDED_X11_STARTUP\n")
-                .append("max_runtime_ms=").append(TIMEOUT_MS).append('\n');
+                .append("max_runtime_ms=").append(timeoutMs).append('\n');
+        if (stop.isStopped()) return cancelled(report);
         if (!Environment.isExternalStorageManager()) {
             return failed(report, "All files access permission was not granted");
         }
@@ -65,6 +67,7 @@ final class GameBootProbe {
             return failed(report, "Rock Band 4 region/version preflight did not match 02.21\n"
                     + preflight.report);
         }
+        if (stop.isStopped()) return cancelled(report);
         String gameFolder = GamePreflight.rawPrimaryPath(gameTree);
         if (gameFolder == null) {
             return failed(report, "Selected game folder is not mapped to primary shared storage");
@@ -143,12 +146,14 @@ final class GameBootProbe {
         StandaloneX11Server x11 = null;
         VortekRendererComponent vortek = null;
         try {
+            if (stop.isStopped()) return cancelled(report);
             // This is idempotent and never replaces user content. The emulator
             // needs an existing portable UserDir before its static path setup.
             // Its default user manager may then create home/1000 beneath it.
             Files.createDirectories(portableUserDir.resolve("home").resolve("1000"));
             report.append("portable_user_dir=").append(portableUserDir).append('\n')
                     .append("portable_user_dir_ready=true\n");
+            if (stop.isStopped()) return cancelled(report);
 
             // This is a genuine private Xorg socket, not the SDL dummy driver.
             // A complete on-screen renderer and Vulkan proxy are still pending.
@@ -156,6 +161,7 @@ final class GameBootProbe {
             report.append("x11_ready=true\n")
                     .append("x11_display=").append(x11.display).append('\n')
                     .append("x11_authentication=true\n");
+            if (stop.isStopped()) return cancelled(report);
 
             // The glibc Vortek client communicates with a separate Android
             // Vulkan server using a Unix socket and shared-memory FDs. Keep
@@ -173,9 +179,11 @@ final class GameBootProbe {
             serverFd = NativeRuntimeSocket.openServer(socket.toString());
             if (serverFd < 0) return failed(report, "Control socket errno=" + (-serverFd));
             int listeningFd = serverFd;
+            stop.onStop(() -> NativeRuntimeSocket.cancelSession(listeningFd));
+            if (stop.isStopped()) return cancelled(report);
             listener = Executors.newSingleThreadExecutor();
             Future<String> incoming = listener.submit(
-                    () -> NativeRuntimeSocket.readSession(listeningFd, TIMEOUT_MS));
+                    () -> NativeRuntimeSocket.readSession(listeningFd, timeoutMs));
 
             capture = File.createTempFile("rb4dx-real-boot-", ".log", context.getCacheDir());
             ProcessBuilder builder = new ProcessBuilder(
@@ -217,7 +225,10 @@ final class GameBootProbe {
             builder.redirectErrorStream(true);
             builder.redirectOutput(capture);
 
+            if (stop.isStopped()) return cancelled(report);
             process = builder.start();
+            Process activeProcess = process;
+            stop.onStop(activeProcess::destroyForcibly);
             // Use the native emulator's already-implemented controller snapshot
             // reader. A bounded 20 Hz sender lets button holds persist during
             // the diagnostic while avoiding a flood of socket writes.
@@ -226,15 +237,19 @@ final class GameBootProbe {
             InputFramePump activeInput = inputPump;
             inputSender = Executors.newSingleThreadScheduledExecutor();
             inputSender.scheduleAtFixedRate(activeInput::tick, 0, 50, TimeUnit.MILLISECONDS);
-            boolean completed = process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            boolean completed = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!completed) {
                 process.destroyForcibly();
                 process.waitFor(2, TimeUnit.SECONDS);
             }
+            boolean stoppedByUser = stop.isStopped();
             int exit = completed ? process.exitValue() : -1;
             inputSender.shutdownNow();
             inputSender.awaitTermination(750, TimeUnit.MILLISECONDS);
-            String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
+            // On timeout or Stop, release the native listener before collecting
+            // its trace; a missing connection must not delay UI responsiveness.
+            NativeRuntimeSocket.cancelSession(listeningFd);
+            String frames = incoming.get(4, TimeUnit.SECONDS);
             String emulatorLog = tail(capture);
             String crashDiagnostics = crashDiagnostics(capture);
             String gpuWaitDiagnostics = GpuWaitSummary.fromLog(capture.toPath());
@@ -261,7 +276,8 @@ final class GameBootProbe {
                             ? "CONTROL_CONNECTED_BEFORE_WINDOW" : "PROCESS_STARTED_ONLY";
 
             report.append("exit=").append(exit).append('\n')
-                    .append("timed_out=").append(!completed).append('\n')
+                    .append("timed_out=").append(!completed && !stoppedByUser).append('\n')
+                    .append("stopped_by_user=").append(stoppedByUser).append('\n')
                     .append("early_content_accepted=").append(accepted).append('\n')
                     .append("emulator_run_marker=").append(reachedEmulator).append('\n')
                     .append("guest_running_event=").append(reachedGuest).append('\n')
@@ -308,6 +324,11 @@ final class GameBootProbe {
     private static Result failed(StringBuilder report, String reason) {
         return new Result("RB4DX_GAME_STARTUP_PROBE_FAILED\n" + report
                 + "reason=" + reason + '\n');
+    }
+
+    private static Result cancelled(StringBuilder report) {
+        return new Result("RB4DX_GAME_STARTUP_PROBE_CANCELLED\n" + report
+                + "timed_out=false\nstopped_by_user=true\n");
     }
 
     private static Result retainLog(String report, File capture, Path files) {
