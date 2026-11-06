@@ -10,15 +10,15 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.12.14-live-heartbeat"
+        versionCode = 21
+        versionName = "0.12.15-controller-input"
         ndk {
             abiFilters.add("arm64-v8a")
         }
         manifestPlaceholders["appLabel"] = "Rock Band 4 Deluxe"
     }
 
-    // Live-surface v0.12.14 remains separate from v0.12.10 through v0.12.13.
+    // Controller-input v0.12.15 stays independent of the last verified UI APK.
     // It cannot overwrite previous app installs or their app-private data.
     signingConfigs {
         create("rb4dxCachedDebug") {
@@ -30,8 +30,8 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".linuxvk.turnip.liveheartbeat"
-            manifestPlaceholders["appLabel"] = "RB4DX Live Display Test"
+            applicationIdSuffix = ".linuxvk.turnip.inputbridge"
+            manifestPlaceholders["appLabel"] = "RB4DX Controller Input"
             if (rootProject.file(".ci-signing/rb4dx-test.keystore").isFile) {
                 signingConfig = signingConfigs.getByName("rb4dxCachedDebug")
             }

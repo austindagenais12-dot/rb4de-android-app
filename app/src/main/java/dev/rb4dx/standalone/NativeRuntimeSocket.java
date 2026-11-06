@@ -13,5 +13,7 @@ final class NativeRuntimeSocket {
     static native int openServer(String socketPath);
     /** Blocks for a bounded time, accepting one client and capturing protocol frames. */
     static native String readSession(int serverFd, int timeoutMs);
+    /** Per-session emulator INPUT frame writer; 0 = no client, <0 = errno. */
+    static native int sendInputFrame(int serverFd, String frame);
     static native void closeServer(int serverFd);
 }

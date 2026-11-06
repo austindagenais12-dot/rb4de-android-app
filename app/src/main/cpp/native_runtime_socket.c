@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <jni.h>
+#include "rb4dx_input_transport.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -64,6 +65,8 @@ Java_dev_rb4dx_standalone_NativeRuntimeSocket_readSession(
     int client = accept4(server_fd, NULL, NULL, SOCK_CLOEXEC);
     if (client < 0) return read_result(env, "ACCEPT_FAILED", errno);
 
+    rb4dx_input_attach(server_fd, client);
+
     char result[16385];
     size_t used = 0;
     int elapsed = 0;
@@ -86,10 +89,23 @@ Java_dev_rb4dx_standalone_NativeRuntimeSocket_readSession(
             break;
         }
     }
+    rb4dx_input_detach(server_fd, client);
     close(client);
     result[used] = '\0';
     if (!used) return (*env)->NewStringUTF(env, "CLIENT_CONNECTED_NO_FRAMES");
     return (*env)->NewStringUTF(env, result);
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_rb4dx_standalone_NativeRuntimeSocket_sendInputFrame(
+        JNIEnv* env, jclass ignored, jint server_fd, jstring frame) {
+    (void)ignored;
+    if (frame == NULL) return -EINVAL;
+    const char* bytes = (*env)->GetStringUTFChars(env, frame, NULL);
+    if (bytes == NULL) return -ENOMEM;
+    int sent = rb4dx_input_send(server_fd, bytes, strlen(bytes));
+    (*env)->ReleaseStringUTFChars(env, frame, bytes);
+    return sent;
 }
 
 JNIEXPORT void JNICALL

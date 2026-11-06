@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -49,7 +50,7 @@ final class GameBootProbe {
     private GameBootProbe() {}
 
     static Result run(Context context, Path runtimeDirectory, Uri gameTree,
-            String expectedTitle, SurfaceHolder previewSurface) {
+            String expectedTitle, SurfaceHolder previewSurface, Ps4InputState controller) {
         StringBuilder report = new StringBuilder("RB4DX_GAME_STARTUP_DIAGNOSTIC_V2\n")
                 .append("mode=REAL_SHADPS4_EMBEDDED_X11_STARTUP\n")
                 .append("max_runtime_ms=").append(TIMEOUT_MS).append('\n');
@@ -135,6 +136,8 @@ final class GameBootProbe {
 
         int serverFd = -1;
         ExecutorService listener = null;
+        ScheduledExecutorService inputSender = null;
+        InputFramePump inputPump = null;
         Process process = null;
         File capture = null;
         StandaloneX11Server x11 = null;
@@ -215,12 +218,22 @@ final class GameBootProbe {
             builder.redirectOutput(capture);
 
             process = builder.start();
+            // Use the native emulator's already-implemented controller snapshot
+            // reader. A bounded 20 Hz sender lets button holds persist during
+            // the diagnostic while avoiding a flood of socket writes.
+            inputPump = new InputFramePump(controller,
+                    frame -> NativeRuntimeSocket.sendInputFrame(listeningFd, frame));
+            InputFramePump activeInput = inputPump;
+            inputSender = Executors.newSingleThreadScheduledExecutor();
+            inputSender.scheduleAtFixedRate(activeInput::tick, 0, 50, TimeUnit.MILLISECONDS);
             boolean completed = process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS);
             if (!completed) {
                 process.destroyForcibly();
                 process.waitFor(2, TimeUnit.SECONDS);
             }
             int exit = completed ? process.exitValue() : -1;
+            inputSender.shutdownNow();
+            inputSender.awaitTermination(750, TimeUnit.MILLISECONDS);
             String frames = incoming.get(TIMEOUT_MS + 4000L, TimeUnit.MILLISECONDS);
             String emulatorLog = tail(capture);
             String crashDiagnostics = crashDiagnostics(capture);
@@ -260,6 +273,7 @@ final class GameBootProbe {
                     .append("vortek_window_updates=").append(windowUpdateCount).append('\n')
                     .append("android_surface_attached=false\n")
                     .append(vortek.heartbeatReport())
+                    .append(inputPump.report())
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append(vortek.previewDiagnosticReport())
                     .append("crash_register_capture_enabled=true\n")
@@ -276,6 +290,7 @@ final class GameBootProbe {
                     + "reason=" + error.getClass().getSimpleName() + ": "
                     + error.getMessage() + '\n', capture, files);
         } finally {
+            if (inputSender != null) inputSender.shutdownNow();
             if (process != null && process.isAlive()) process.destroyForcibly();
             if (vortek != null) vortek.close();
             if (x11 != null) x11.close();

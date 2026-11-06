@@ -3,6 +3,7 @@ project(rb4dx_native_bridge C)
 
 add_library(rb4dx_bridge SHARED
         native_runtime_socket.c
+        rb4dx_input_transport.c
         native_vulkan_probe.c
         native_vulkan_frame.c
         native_file_access.c)

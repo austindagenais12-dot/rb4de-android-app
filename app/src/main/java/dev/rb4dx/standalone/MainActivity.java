@@ -15,14 +15,18 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -47,6 +51,7 @@ public final class MainActivity extends Activity {
     private static final int FG = Color.rgb(239, 240, 247);
     private static final int MUTED = Color.rgb(174, 179, 197);
     private static final int ACCENT = Color.rgb(87, 115, 235);
+    private final Ps4InputState controllerState = new Ps4InputState();
 
     private final ExecutorService importer = Executors.newSingleThreadExecutor();
     private final ExecutorService runtimeWorker = Executors.newSingleThreadExecutor();
@@ -65,6 +70,10 @@ public final class MainActivity extends Activity {
     private TextView vulkanFrameStatus;
     private TextView gameBootStatus;
     private TextView turnipStatus;
+    private TextView controllerStatus;
+    private TouchControllerPanel touchPanel;
+    private LinearLayout.LayoutParams touchPanelHeightParams;
+    private LinearLayout controllerDock;
     private RadioGroup gpuDrivers;
     private RadioButton systemGpuRadio;
     private RadioButton turnipGpuRadio;
@@ -350,20 +359,116 @@ public final class MainActivity extends Activity {
         exportGameBootLogButton.setOnClickListener(v -> exportGameBootLog());
         addGap(body, 22);
 
-        addText(body, "10. Play", 19, FG, true);
+        addText(body, "10. Controller & touchscreen input", 19, FG, true);
+        addText(body,
+                "Bluetooth and USB gamepads use the Android controller input system. "
+                        + "A touch panel can send standard PS4 buttons, sticks and triggers. "
+                        + "Inputs are sent to the emulator only during the 18-second startup test. "
+                        + "The game itself has NOT confirmed input yet.",
+                14, MUTED, false);
+        controllerStatus = addText(body,
+                "Input bridge ready. Connect a Bluetooth/USB gamepad or show the touch panel below.",
+                13, MUTED, false);
+        RadioGroup controlMode = new RadioGroup(this);
+        controlMode.setOrientation(RadioGroup.VERTICAL);
+        RadioButton padMode = radio("Gamepad");
+        RadioButton guitarMode = radio("Guitar • falling-note preview");
+        controlMode.addView(padMode);
+        controlMode.addView(guitarMode);
+        controlMode.check(padMode.getId());
+        body.addView(controlMode);
+        addText(body, "Touch panel transparency", 14, MUTED, false);
+        SeekBar opacity = new SeekBar(this);
+        opacity.setMin(40);
+        opacity.setMax(100);
+        opacity.setProgress(preferences.getInt("touch_panel_opacity", 83));
+        body.addView(opacity);
+        Button toggleController = button(body, "Show on-screen controls");
+        addText(body,
+                "Tip: use multiple fingers to hit chords. The guitar view shows animated SAMPLE "
+                        + "notes moving toward five colored tap zones. These notes are NOT synchronized "
+                        + "to Rock Band yet. Taps send ordinary PS4 buttons; actual RB4 guitar recognition "
+                        + "still requires instrument-class and song-timing integration.",
+                13, MUTED, false);
+        addGap(body, 22);
+
+        addText(body, "11. Play", 19, FG, true);
         Button play = button(body, "PLAY • Android bridge not connected");
         play.setEnabled(false);
         addText(body,
-                "The native control channel is an early milestone. Android graphics, audio, input and game-folder mounting still need integration. Play remains disabled until actual game launching works.",
+                "The controller message bridge is now available in the startup diagnostic. "
+                        + "Live game graphics, audio, instrument detection and unrestricted game launching "
+                        + "are not yet working. Play remains disabled until that is verified.",
                 14, MUTED, false);
         addGap(body, 16);
         addText(body,
                 "Independent test install • Preserves the previous RB4DX app and Bachata S4",
                 12, MUTED, false);
 
-        setContentView(scroll);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        controllerDock = new LinearLayout(this);
+        controllerDock.setOrientation(LinearLayout.VERTICAL);
+        controllerDock.setVisibility(View.GONE);
+        controllerDock.setBackgroundColor(0xdd0c1223);
+        LinearLayout dockHeader = new LinearLayout(this);
+        dockHeader.setOrientation(LinearLayout.HORIZONTAL);
+        TextView dockTitle = new TextView(this);
+        dockTitle.setText("RB4DX • TOUCH CONTROLLER");
+        dockTitle.setTextSize(12);
+        dockTitle.setTextColor(0xffb2caff);
+        dockTitle.setGravity(Gravity.CENTER_VERTICAL);
+        dockHeader.addView(dockTitle, new LinearLayout.LayoutParams(0, dp(40), 1));
+        Button hide = new Button(this);
+        hide.setAllCaps(false);
+        hide.setText("Hide controls ✕");
+        hide.setTextSize(12);
+        hide.setTextColor(Color.WHITE);
+        hide.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff273756));
+        dockHeader.addView(hide, new LinearLayout.LayoutParams(dp(148), dp(42)));
+        controllerDock.addView(dockHeader);
+        touchPanel = new TouchControllerPanel(this, controllerState);
+        touchPanelHeightParams = new LinearLayout.LayoutParams(-1, dp(254));
+        controllerDock.addView(touchPanel, touchPanelHeightParams);
+        FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        root.addView(controllerDock, dockParams);
+        hide.setOnClickListener(v -> {
+            touchPanel.releaseAll();
+            controllerDock.setVisibility(View.GONE);
+            toggleController.setText("Show on-screen controls");
+        });
+        toggleController.setOnClickListener(v -> {
+            boolean showing = controllerDock.getVisibility() != View.VISIBLE;
+            if (!showing) touchPanel.releaseAll();
+            controllerDock.setVisibility(showing ? View.VISIBLE : View.GONE);
+            toggleController.setText(showing ? "Hide on-screen controls" : "Show on-screen controls");
+        });
+        controlMode.setOnCheckedChangeListener((group, id) -> {
+            boolean guitarSelected = id == guitarMode.getId();
+            touchPanel.setGuitarMode(guitarSelected);
+            setPanelHeightForGuitar(guitarSelected);
+        });
+        touchPanel.setOpacityPercent(opacity.getProgress());
+        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                touchPanel.setOpacityPercent(progress);
+                if (fromUser) preferences.edit().putInt("touch_panel_opacity", progress).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+
+        setContentView(root);
         refreshStatus();
         prepareNativeRuntime();
+    }
+
+    private void setPanelHeightForGuitar(boolean guitar) {
+        if (touchPanel == null || touchPanelHeightParams == null) return;
+        touchPanelHeightParams.height = guitar
+                ? Math.min(dp(620), Math.round(getResources().getDisplayMetrics().heightPixels * .67f))
+                : dp(254);
+        touchPanel.setLayoutParams(touchPanelHeightParams);
     }
 
     @Override
@@ -371,6 +476,13 @@ public final class MainActivity extends Activity {
         super.onResume();
         refreshNativeAccessStatus();
         refreshTurnipStatus();
+    }
+
+    @Override
+    protected void onPause() {
+        controllerState.clearHardware();
+        if (touchPanel != null) touchPanel.releaseAll();
+        super.onPause();
     }
 
     private void openAllFilesSettings() {
@@ -520,14 +632,19 @@ public final class MainActivity extends Activity {
         gameBootButton.setEnabled(false);
         exportGameBootLogButton.setEnabled(false);
         gameBootStatus.setText("Starting real shadPS4 with Rock Band 4; safety timeout 18 seconds…");
+        controllerStatus.setText("Input link armed • press the controller or use the touch panel while this test runs.");
         Path runtime = preparedRuntimeDirectory;
         String title = selectedTitleId;
         Uri gameUri = Uri.parse(saved);
         runtimeWorker.submit(() -> {
             GameBootProbe.Result result = GameBootProbe.run(this, runtime, gameUri,
-                    title, vulkanSurface.getHolder());
+                    title, vulkanSurface.getHolder(), controllerState);
             runOnUiThread(() -> {
                 gameBootRunning = false;
+                controllerState.reset();
+                if (touchPanel != null) touchPanel.releaseAll();
+                controllerStatus.setText("Input test finished • review input_frames_delivered_to_socket in the report. "
+                        + "Guest acknowledgment is not yet available.");
                 lastGameBootReport = result.report;
                 lastGameBootFullLog = result.fullLog;
                 copyGameBootButton.setEnabled(true);
@@ -538,6 +655,28 @@ public final class MainActivity extends Activity {
                         Math.min(1900, result.report.length())));
             });
         });
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (gameBootRunning && AndroidGamepadInput.handleKey(event, controllerState)) {
+            if (controllerStatus != null && event.getAction() == KeyEvent.ACTION_DOWN) {
+                controllerStatus.setText("Physical controller detected • sending standard PS4 pad input during startup");
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (gameBootRunning && AndroidGamepadInput.handleJoystick(event, controllerState)) {
+            if (controllerStatus != null) {
+                controllerStatus.setText("Physical joystick connected • analog and button snapshots active");
+            }
+            return true;
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     private void runSmokeTest() {

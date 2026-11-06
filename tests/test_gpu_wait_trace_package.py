@@ -7,8 +7,8 @@ android = (ROOT / ".github/workflows/android.yml").read_text()
 runtime = (ROOT / ".github/workflows/native-runtime.yml").read_text()
 patch = ROOT / "native/patches/rb4dx-gpu-wait-trace.patch"
 
-assert 'applicationIdSuffix = ".linuxvk.turnip.liveheartbeat"' in gradle
-assert 'versionName = "0.12.14-live-heartbeat"' in gradle
+assert 'applicationIdSuffix = ".linuxvk.turnip.inputbridge"' in gradle
+assert 'versionName = "0.12.15-controller-input"' in gradle
 assert "feature/v01213-gpu-wait-trace" in android
 assert "feature/v01213-gpu-wait-trace" in runtime
 assert "feature/v01214-live-surface-heartbeat" in android
@@ -19,4 +19,4 @@ source = patch.read_text()
 assert "RB4DX_WAIT_BEGIN" in source
 assert "debug_resume_count % 5'000'000" in source
 assert "!wait_reg_mem->Test(regs.reg_array)" in source
-print("PASS: v0.12.13 GPU wait trace persists in v0.12.14 native runtime")
+print("PASS: v0.12.13 GPU wait trace remains pinned in the successor input build")
