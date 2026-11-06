@@ -7,6 +7,7 @@ p.add_argument('--source', default=os.environ.get('VORTEK_SERVER_SOURCE'))
 p.add_argument('--patched', action='store_true')
 p.add_argument('--baseline', action='store_true')
 p.add_argument('--layout-only', action='store_true')
+p.add_argument('--shutdown-only', action='store_true')
 a=p.parse_args()
 if not a.source:
     p.error('--source (or VORTEK_SERVER_SOURCE) must point to pinned Vortek sources')
@@ -36,8 +37,18 @@ with tempfile.TemporaryDirectory(prefix='rb4dx-foreign-sync-') as td:
       '-include',str(ROOT/'tests/vortek_host/swapchain_host.h'),
       '-I'+str(ROOT/'tests/vortek_host'),'-I'+str(server/'include'),'-I'+str(work),
     ]
-    if not a.layout_only:
+    if not a.layout_only and not a.shutdown_only:
         subprocess.run(cmd+[str(ROOT/'tests/VortekForeignSyncTest.c'),str(server/'src/xwindow_swapchain.c'),'-o',str(work/'test')],check=True)
         subprocess.run([str(work/'test')],check=True)
-    subprocess.run(cmd+[str(ROOT/'tests/VortekPresentLayoutTest.c'),'-o',str(work/'layouts')],check=True)
-    subprocess.run([str(work/'layouts')],check=True)
+    if not a.shutdown_only:
+        subprocess.run(cmd+[str(ROOT/'tests/VortekPresentLayoutTest.c'),'-o',str(work/'layouts')],check=True)
+        subprocess.run([str(work/'layouts')],check=True)
+    if not a.layout_only:
+        context=(server/'src/vk_context.c').read_text()
+        thread=re.search(r'static void\* requestHandlerThread\(void\* param\) \{.*?\n\}',context,re.S)
+        receive=re.search(r'static inline int vt_recv\(.*?\n\}',(server/'include/vortek.h').read_text(),re.S)
+        assert thread and receive
+        (work/'thread_under_test.c').write_text(thread.group())
+        (work/'receive_under_test.c').write_text(receive.group())
+        subprocess.run(cmd+[str(ROOT/'tests/VortekErrorShutdownTest.c'),'-o',str(work/'shutdown')],check=True)
+        subprocess.run([str(work/'shutdown')],check=True)

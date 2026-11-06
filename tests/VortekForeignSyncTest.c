@@ -8,6 +8,7 @@
 
 #define H(type, n) ((type)(uintptr_t)(n))
 static unsigned next_handle = 32, submits, publications, cancellations, failures;
+static unsigned fail_submit_at, guest_signals;
 static unsigned destroyed_pools, destroyed_images, destroyed_fences, barriers;
 static int reserve_index;
 static VkResult submit_result = VK_SUCCESS, wait_result = VK_SUCCESS;
@@ -105,7 +106,9 @@ static VkResult submit(VkQueue q,uint32_t n,const VkSubmitInfo* s,VkFence f) {
    assert(recorded_src[cb]!=0 && recorded_dst[cb]!=0);
  }
  if(s->waitSemaphoreCount) assert(s->pWaitDstStageMask[0]==VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
- return submit_result;
+ VkResult result=fail_submit_at==submits?VK_ERROR_OUT_OF_DEVICE_MEMORY:submit_result;
+ if(result==VK_SUCCESS) guest_signals+=s->signalSemaphoreCount;
+ return result;
 }
 TestVulkanWrapper vulkanWrapper={
  .vkGetAndroidHardwareBufferPropertiesANDROID=ahb,.vkAllocateMemory=allocate,.vkBindImageMemory=bind,
@@ -177,5 +180,19 @@ int main(void) {
  wait_result=VK_SUCCESS;XWindowSwapchain_destroy(H(VkDevice,1),sc);reject_publish=false;
  assert(destroyed_pools==pools+1);
  puts("PASS: delayed GPU completion retains command pools and images until safe destruction");
+ sc=make_swapchain();reserve_index=0;
+ before=guest_signals;
+ assert(XWindowSwapchain_acquireNextImage(sc,1,VK_NULL_HANDLE,H(VkFence,9),&out)==VK_SUCCESS);
+ assert(last_fence==H(VkFence,9) && guest_signals==before);
+ present(sc,0);
+ assert(XWindowSwapchain_acquireNextImage(sc,1,H(VkSemaphore,6),H(VkFence,9),&out)==VK_SUCCESS);
+ assert(last_fence==H(VkFence,9) && guest_signals==before+1);
+ present(sc,0);
+ fail_submit_at=submits+2;before=cancellations;
+ assert(XWindowSwapchain_acquireNextImage(sc,1,H(VkSemaphore,6),H(VkFence,9),&out)==VK_ERROR_DEVICE_LOST && "partially signaled acquire must be terminal, never retryable");
+ assert(cancellations==before);
+ unsigned keep=destroyed_pools;XWindowSwapchain_destroy(H(VkDevice,1),sc);assert(destroyed_pools==keep);
+ fail_submit_at=0;present(sc,0);XWindowSwapchain_destroy(H(VkDevice,1),sc);
+ puts("PASS: fence-only and combined acquisition signal correctly; partial submit failure is terminal");
  return 0;
 }

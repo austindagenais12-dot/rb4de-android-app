@@ -12,7 +12,7 @@
 +    bool initialized;
 +    bool acquired;
  } XWindowSwapchain_Image;
- 
+
  typedef struct XWindowSwapchain {
      int windowId;
      VkDevice device;
@@ -24,7 +24,7 @@
 @@ -34,4 +43,6 @@
  extern void XWindowSwapchain_cancelImage(XWindowSwapchain* swapchain, uint32_t imageIndex);
  extern void XWindowSwapchain_noteGpuPresentFailure(XWindowSwapchain* swapchain, uint32_t imageIndex, VkResult result);
- 
+
 +extern VkResult XWindowSwapchain_releaseImage(XWindowSwapchain* swapchain, uint32_t imageIndex, uint32_t waitCount, const VkSemaphore* waits);
 +
  #endif
@@ -65,31 +65,31 @@
 -    vulkanWrapper.vkGetAndroidHardwareBufferPropertiesANDROID(device, hardwareBuffer, &ahbProperties);
 +    VkResult properties = vulkanWrapper.vkGetAndroidHardwareBufferPropertiesANDROID(device, hardwareBuffer, &ahbProperties);
 +    if (properties != VK_SUCCESS) return properties;
- 
+
      VkImportAndroidHardwareBufferInfoANDROID memoryImportInfo = {0};
      memoryImportInfo.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
 @@ -63,7 +64,7 @@
      if (result != VK_SUCCESS) return result;
- 
+
      result = vulkanWrapper.vkBindImageMemory(device, image, memory, 0);
 -    if (result != VK_SUCCESS) return result;
 +    if (result != VK_SUCCESS) { vulkanWrapper.vkFreeMemory(device, memory, NULL); return result; }
- 
+
      *pMemory = memory;
      return VK_SUCCESS;
 @@ -111,7 +112,7 @@
      if (result != VK_SUCCESS) return result;
- 
+
      result = createImageMemory(device, image, hardwareBuffer, &memory);
 -    if (result != VK_SUCCESS) return result;
 +    if (result != VK_SUCCESS) { vulkanWrapper.vkDestroyImage(device, image, NULL); return result; }
- 
+
      swapchainImage->image = image;
      swapchainImage->memory = memory;
 @@ -137,39 +138,113 @@
      return surfaceFormats;
  }
- 
+
 +/* Commands and fences live with their image. A timeout never frees GPU work
 + * or gives Android access to a buffer still owned by the Vulkan queue. */
 +static VkResult finishHandoff(XWindowSwapchain* sc, VkFence fence, bool* pending) {
@@ -176,7 +176,7 @@
 +    XWindowSwapchain_destroy(device, swapchain);
      return NULL;
  }
- 
+
  void XWindowSwapchain_destroy(VkDevice device, XWindowSwapchain* swapchain) {
      if (!swapchain) return;
      for (int i = 0; i < swapchain->imageCount; i++) {
@@ -212,7 +212,7 @@
      MEMFREE(swapchain->images);
      MEMFREE(swapchain);
  }
-@@ -179,24 +254,68 @@
+@@ -179,24 +254,74 @@
      getWindowExtent(swapchain->jmethods, swapchain->windowId, &windowSize);
      if (swapchain->imageExtent.width != windowSize.width || swapchain->imageExtent.height != windowSize.height)
          return VK_ERROR_SURFACE_LOST_KHR;
@@ -228,13 +228,6 @@
 -        if (signalSemaphore) {
 -            submitInfo.pSignalSemaphores = &signalSemaphore;
 -            submitInfo.signalSemaphoreCount = 1;
--        }
--        VkResult result = vulkanWrapper.vkQueueSubmit(swapchain->queue, 1, &submitInfo, fence);
--        if (result != VK_SUCCESS) {
--            if (reserved >= 0) XWindowSwapchain_cancelImage(swapchain, *imageIndex);
--            return result;
--        }
--    }
 +    uint32_t index = reserved == -2 ? 0U : (uint32_t)reserved;
 +    XWindowSwapchain_Image* image = &swapchain->images[index];
 +    if (image->acquired || image->releasePending) return VK_ERROR_DEVICE_LOST;
@@ -259,7 +252,19 @@
 +        VkSubmitInfo signal = {0};
 +        signal.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 +        result = vulkanWrapper.vkQueueSubmit(swapchain->queue, 1, &signal, fence);
-+        if (result != VK_SUCCESS) return result; /* acquisition is already pending */
++        if (result != VK_SUCCESS) {
++            /* The first submit may already have signaled a binary semaphore.
++             * Retrying that acquire is invalid. Keep the slot quarantined and
++             * terminate the context through its existing device-lost path. */
++            XWindowSwapchain_noteGpuPresentFailure(swapchain, index, result);
++            return VK_ERROR_DEVICE_LOST;
+         }
+-        VkResult result = vulkanWrapper.vkQueueSubmit(swapchain->queue, 1, &submitInfo, fence);
+-        if (result != VK_SUCCESS) {
+-            if (reserved >= 0) XWindowSwapchain_cancelImage(swapchain, *imageIndex);
+-            return result;
+-        }
+-    }
 +    }
 +    *imageIndex = index;
      return VK_SUCCESS;
@@ -293,7 +298,7 @@
 +    image->acquired = false;
 +    return finishHandoff(sc, image->releaseFence, &image->releasePending);
  }
- 
+
  void XWindowSwapchain_presentImage(XWindowSwapchain* swapchain, uint32_t imageIndex) {
 --- a/src/request_handler.c
 +++ b/src/request_handler.c
@@ -305,19 +310,19 @@
 @@ -1792,6 +1793,7 @@
      VkImageMemoryBarrier imageMemoryBarriers[imageMemoryBarrierCount];
      vt_unserialize_vkCmdWaitEvents(VK_NULL_HANDLE, NULL, events, NULL, NULL, NULL, memoryBarriers, NULL, bufferMemoryBarriers, NULL, imageMemoryBarriers, context->inputBuffer, &context->memoryPool);
- 
+
 +    rb4dxPresentBarriers(imageMemoryBarrierCount, imageMemoryBarriers);
      vulkanWrapper.vkCmdWaitEvents(commandBuffer, eventCount, events, srcStageMask, dstStageMask, memoryBarrierCount, memoryBarriers, bufferMemoryBarrierCount, bufferMemoryBarriers, imageMemoryBarrierCount, imageMemoryBarriers);
  }
- 
+
 @@ -1812,6 +1814,7 @@
      VkImageMemoryBarrier imageMemoryBarriers[imageMemoryBarrierCount];
      vt_unserialize_vkCmdPipelineBarrier(VK_NULL_HANDLE, NULL, NULL, NULL, NULL, memoryBarriers, NULL, bufferMemoryBarriers, NULL, imageMemoryBarriers, context->inputBuffer, &context->memoryPool);
- 
+
 +    rb4dxPresentBarriers(imageMemoryBarrierCount, imageMemoryBarriers);
      vulkanWrapper.vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, memoryBarriers, bufferMemoryBarrierCount, bufferMemoryBarriers, imageMemoryBarrierCount, imageMemoryBarriers);
  }
- 
+
 @@ -2108,57 +2111,22 @@
  void vt_handle_vkQueuePresentKHR(VkContext* context) {
      VkPresentInfoKHR presentInfo = {0};
@@ -390,28 +395,42 @@
 +        XWindowSwapchain_presentImage(sc, index);
      }
  }
- 
+
 @@ -3438,6 +3406,7 @@
      VkCommandBuffer commandBuffer = VkObject_fromId(commandBufferId);
      VkEvent event = VkObject_fromId(eventId);
- 
+
 +    rb4dxPresentDependency(&dependencyInfo);
      vulkanWrapper.vkCmdSetEvent2(commandBuffer, event, &dependencyInfo);
  }
- 
+
 @@ -3464,6 +3433,7 @@
      VkDependencyInfo dependencyInfos[eventCount];
      vt_unserialize_vkCmdWaitEvents2(VK_NULL_HANDLE, NULL, events, dependencyInfos, context->inputBuffer, &context->memoryPool);
- 
+
 +    for (uint32_t i = 0; i < eventCount; i++) rb4dxPresentDependency(&dependencyInfos[i]);
      vulkanWrapper.vkCmdWaitEvents2(commandBuffer, eventCount, events, dependencyInfos);
  }
- 
+
 @@ -3474,6 +3444,7 @@
      vt_unserialize_vkCmdPipelineBarrier2((VkCommandBuffer)&commandBufferId, &dependencyInfo, context->inputBuffer, &context->memoryPool);
      VkCommandBuffer commandBuffer = VkObject_fromId(commandBufferId);
- 
+
 +    rb4dxPresentDependency(&dependencyInfo);
      vulkanWrapper.vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
  }
- 
+
+--- a/src/vk_context.c
++++ b/src/vk_context.c
+@@ -77,6 +77,11 @@
+         context->inputBufferSize = 0;
+     }
+
++    /* Present is fire-and-forget. A terminal GPU/protocol failure must wake
++     * both guest senders and receivers before this sole consumer exits. */
++    if (context->status >= 0) context->status = VK_ERROR_DEVICE_LOST;
++    RingBuffer_setStatus(context->serverRing, RING_STATUS_EXIT);
++    RingBuffer_setStatus(context->clientRing, RING_STATUS_EXIT);
+     (*context->jmethods.jvm)->DetachCurrentThread(context->jmethods.jvm);
+     vt_free(&context->memoryPool);
+     return NULL;
