@@ -343,7 +343,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='26' versionName='0.12.20-live-surface'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='27' versionName='0.12.21-live-geometry'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \

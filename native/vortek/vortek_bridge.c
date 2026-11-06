@@ -157,7 +157,8 @@ static void detach_live_control(void) {
 JNIEXPORT jboolean JNICALL
 Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareLiveSurface(
         JNIEnv* env, jobject component, jobject surface, jint image_width,
-        jint image_height, jint view_width, jint view_height) {
+        jint image_height, jint target_width, jint target_height,
+        jint offset_x, jint offset_y) {
     (void)component;
     detach_live_control();
     pthread_mutex_lock(&buffer_mutex);
@@ -177,7 +178,7 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareL
     live_error_locked("NONE");
     pthread_mutex_unlock(&buffer_mutex);
     if (!surface || image_width <= 0 || image_height <= 0 ||
-        view_width <= 0 || view_height <= 0 || android_get_device_api_level() < 36) {
+        target_width <= 0 || target_height <= 0 || android_get_device_api_level() < 36) {
         pthread_mutex_lock(&buffer_mutex);
         live_error_locked("ANDROID_16_SURFACE_REQUIRED");
         pthread_mutex_unlock(&buffer_mutex);
@@ -206,8 +207,9 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareL
         ASurfaceControl_release(control);
         return JNI_FALSE;
     }
-    ASurfaceTransaction_setScale(tx, control, (float)view_width / (float)image_width,
-            (float)view_height / (float)image_height);
+    ASurfaceTransaction_setScale(tx, control, (float)target_width / (float)image_width,
+            (float)target_height / (float)image_height);
+    ASurfaceTransaction_setPosition(tx, control, offset_x, offset_y);
     ASurfaceTransaction_setVisibility(tx, control, RB4DX_SURFACE_SHOW);
     ASurfaceTransaction_apply(tx);
     ASurfaceTransaction_delete(tx);
@@ -216,8 +218,9 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareL
     live_active = true;
     live_surface_attached = true;
     pthread_mutex_unlock(&buffer_mutex);
-    LOG("live_surface_attached image=%dx%d view=%dx%d epoch=%llu", image_width,
-            image_height, view_width, view_height, (unsigned long long)live_epoch);
+    LOG("live_surface_attached image=%dx%d target=%dx%d offset=%d,%d epoch=%llu", image_width,
+            image_height, target_width, target_height, offset_x, offset_y,
+            (unsigned long long)live_epoch);
     return JNI_TRUE;
 }
 

@@ -9,7 +9,6 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.hardware.HardwareBuffer;
 import android.os.SystemClock;
-import android.util.DisplayMetrics;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 
@@ -55,9 +54,11 @@ public final class VortekRendererComponent implements AutoCloseable {
     }
 
     public VortekRendererComponent(Context context, SurfaceHolder holder, String libvulkanPath) {
-        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        width = Math.max(1, metrics.widthPixels);
-        height = Math.max(1, metrics.heightPixels);
+        // The Vulkan swapchain/image dimensions follow the guest's render
+        // target, not the phone's portrait screen resolution. The latter
+        // cropped 1280x720 Rock Band graphics into the top strip.
+        width = LiveFrameGeometry.FRAME_WIDTH;
+        height = LiveFrameGeometry.FRAME_HEIGHT;
         previewHolder = holder;
         // The pinned Vortek JNI already loads custom AdrenoTools drivers when
         // provided an absolute library path. Null preserves system Vulkan.
@@ -181,8 +182,10 @@ public final class VortekRendererComponent implements AutoCloseable {
         if (previewHolder != null && previewHolder.getSurface() != null
                 && previewHolder.getSurface().isValid()) {
             Rect frame = previewHolder.getSurfaceFrame();
-            nativePrepareLiveSurface(previewHolder.getSurface(), width, height,
+            LiveFrameGeometry.Layout layout = LiveFrameGeometry.fit(
                     Math.max(1, frame.width()), Math.max(1, frame.height()));
+            nativePrepareLiveSurface(previewHolder.getSurface(), width, height,
+                    layout.targetWidth, layout.targetHeight, layout.offsetX, layout.offsetY);
         }
         serverPtr = startNativeServer(privateSocketPath, options);
         return serverPtr != 0;
@@ -321,7 +324,7 @@ public final class VortekRendererComponent implements AutoCloseable {
     private native long acquireNativeBuffer(int windowId, int imageIndex, boolean preferBgra, int width, int height);
     private native boolean nativeNotePresentedImage(int windowId, int imageIndex);
     private native boolean nativePrepareLiveSurface(Surface surface, int imageWidth,
-            int imageHeight, int viewWidth, int viewHeight);
+            int imageHeight, int targetWidth, int targetHeight, int offsetX, int offsetY);
     private native void nativeDetachLiveSurface();
     private native int nativeAcquireWindowImage(int windowId, int imageCount, long timeoutNs);
     private native void nativeCancelWindowImage(int windowId, int imageIndex);

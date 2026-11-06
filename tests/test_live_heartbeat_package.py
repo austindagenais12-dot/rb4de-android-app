@@ -6,8 +6,8 @@ gradle = (ROOT / "app/build.gradle.kts").read_text()
 android = (ROOT / ".github/workflows/android.yml").read_text()
 runtime = (ROOT / ".github/workflows/native-runtime.yml").read_text()
 
-assert 'versionCode = 26' in gradle
-assert 'versionName = "0.12.20-live-surface"' in gradle
+assert 'versionCode = 27' in gradle
+assert 'versionName = "0.12.21-live-geometry"' in gradle
 assert 'applicationIdSuffix = ".linuxvk.turnip.inputbridge"' in gradle
 assert 'manifestPlaceholders["appLabel"] = "RB4DX Controller Input"' in gradle
 assert 'feature/v01214-live-surface-heartbeat' in android

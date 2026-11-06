@@ -31,5 +31,7 @@ void ASurfaceTransaction_reparent(ASurfaceTransaction* transaction,
         ASurfaceControl* surface_control, ASurfaceControl* new_parent);
 void ASurfaceTransaction_setScale(ASurfaceTransaction* transaction,
         ASurfaceControl* surface_control, float x_scale, float y_scale);
+void ASurfaceTransaction_setPosition(ASurfaceTransaction* transaction,
+        ASurfaceControl* surface_control, int32_t x, int32_t y);
 
 #endif

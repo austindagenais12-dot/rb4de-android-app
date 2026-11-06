@@ -28,6 +28,8 @@ sources=(
   "$project_dir/tests/FramePreviewTraceTest.java"
   "$project_dir/app/src/main/java/com/winlator/xenvironment/components/LiveHeartbeatTracker.java"
   "$project_dir/tests/LiveHeartbeatTrackerTest.java"
+  "$project_dir/app/src/main/java/com/winlator/xenvironment/components/LiveFrameGeometry.java"
+  "$project_dir/tests/LiveFrameGeometryTest.java"
 )
 if command -v javac >/dev/null 2>&1; then
   javac -d "$build_dir" "${sources[@]}"
@@ -46,6 +48,7 @@ java -cp "$build_dir" dev.rb4dx.standalone.NativeCrashSummaryTest
 java -cp "$build_dir" dev.rb4dx.standalone.GpuWaitSummaryTest
 java -cp "$build_dir" com.winlator.xenvironment.components.FramePreviewTraceTest
 java -cp "$build_dir" com.winlator.xenvironment.components.LiveHeartbeatTrackerTest
+java -cp "$build_dir" com.winlator.xenvironment.components.LiveFrameGeometryTest
 c++ -std=c++20 -Wall -Wextra -Werror \
   -I "$project_dir/native/patches" \
   "$project_dir/tests/VulkanDispatchGuardTest.cpp" \
