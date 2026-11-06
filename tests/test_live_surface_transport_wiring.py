@@ -21,6 +21,7 @@ assert "rb4dx_frame_ring_gpu_complete" in bridge
 assert "rb4dx_frame_ring_present" in bridge
 assert "rb4dx_frame_ring_release" in bridge
 assert "ASurfaceTransaction_setBufferWithRelease" in bridge
+assert '"rb4dx_surface_control_compat.h"' in bridge
 assert "release_fence_fd" in bridge
 assert "pthread_cond_broadcast" in bridge
 assert "rb4dx_frame_ring.c" in cmake

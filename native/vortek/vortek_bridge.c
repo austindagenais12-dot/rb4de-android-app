@@ -7,7 +7,6 @@
 #include <android/hardware_buffer_jni.h>
 #include <android/log.h>
 #include <android/native_window_jni.h>
-#include <android/surface_control.h>
 #include <android/api-level.h>
 #include <dlfcn.h>
 #include <errno.h>
@@ -27,6 +26,7 @@
 #include "bachata_vortek_protocol.h"
 #include "rb4dx_window_images.h"
 #include "rb4dx_frame_ring.h"
+#include "rb4dx_surface_control_compat.h"
 #include "vulkan_wrapper.h"
 
 #define TAG "RB4DX.Vortek.Server"
@@ -145,7 +145,7 @@ static void detach_live_control(void) {
     if (control) {
         ASurfaceTransaction* tx = ASurfaceTransaction_create();
         if (tx) {
-            ASurfaceTransaction_setVisibility(tx, control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
+            ASurfaceTransaction_setVisibility(tx, control, RB4DX_SURFACE_HIDE);
             ASurfaceTransaction_reparent(tx, control, NULL);
             ASurfaceTransaction_apply(tx);
             ASurfaceTransaction_delete(tx);
@@ -208,7 +208,7 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareL
     }
     ASurfaceTransaction_setScale(tx, control, (float)view_width / (float)image_width,
             (float)view_height / (float)image_height);
-    ASurfaceTransaction_setVisibility(tx, control, ASURFACE_TRANSACTION_VISIBILITY_SHOW);
+    ASurfaceTransaction_setVisibility(tx, control, RB4DX_SURFACE_SHOW);
     ASurfaceTransaction_apply(tx);
     ASurfaceTransaction_delete(tx);
     pthread_mutex_lock(&buffer_mutex);
