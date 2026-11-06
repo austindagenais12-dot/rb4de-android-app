@@ -15,7 +15,7 @@ public final class StartupLogStoreTest {
 
         String shortLog = "first Vulkan line\nshader probe\n";
         Files.writeString(source, shortLog);
-        StartupLogStore.Retention small = StartupLogStore.retainTail(source.toFile(), saved, 128);
+        StartupLogStore.Retention small = StartupLogStore.retainHeadAndTail(source.toFile(), saved, 128);
         check(!small.truncated, "small log should be complete");
         check(small.sourceBytes == shortLog.getBytes(StandardCharsets.UTF_8).length,
                 "source length should be reported");
@@ -27,25 +27,31 @@ public final class StartupLogStoreTest {
         check(exported.toString(StandardCharsets.UTF_8).equals(shortLog),
                 "export should preserve original content");
 
-        String huge = "Vulkan command line 000123456789\n".repeat(40);
+        // The original tail-only retention lost early initialization errors
+        // whenever the guest generated tens of megabytes of pad-polling spam.
+        String huge = "EARLY: Vulkan instance initialization failed\n"
+                + "pad polling noise\n".repeat(100)
+                + "LATE: PM4 WAIT_REG_MEM stalled\n";
         Files.writeString(source, huge);
-        StartupLogStore.Retention large = StartupLogStore.retainTail(source.toFile(), saved, 128);
+        StartupLogStore.Retention large = StartupLogStore.retainHeadAndTail(source.toFile(), saved, 512);
         String retained = Files.readString(saved);
         check(large.truncated, "oversized log must say it was truncated");
-        check(large.savedBytes <= 128, "saved file must be bounded");
-        check(retained.startsWith(StartupLogStore.TRUNCATION_MARKER),
-                "omitted early lines must be labeled");
-        check(retained.endsWith(huge.substring(huge.length() - 20)),
-                "saved log must retain its last bytes");
+        check(large.savedBytes <= 512, "saved file must be bounded");
+        check(retained.contains(StartupLogStore.TRUNCATION_MARKER),
+                "omitted middle lines must be labeled");
+        check(retained.startsWith("EARLY: Vulkan instance initialization failed\n"),
+                "retained log should begin with the real startup lines");
+        check(retained.endsWith("LATE: PM4 WAIT_REG_MEM stalled\n"),
+                "diagnostics must preserve the end of the run");
 
         Files.writeString(source, "replacement\n");
-        StartupLogStore.retainTail(source.toFile(), saved, 128);
+        StartupLogStore.retainHeadAndTail(source.toFile(), saved, 128);
         check(Files.readString(saved).equals("replacement\n"),
                 "new run should atomically replace old run");
 
         boolean failedForMissingSource = false;
         try {
-            StartupLogStore.retainTail(directory.resolve("does-not-exist").toFile(), saved, 128);
+            StartupLogStore.retainHeadAndTail(directory.resolve("does-not-exist").toFile(), saved, 128);
         } catch (IOException expected) {
             failedForMissingSource = true;
         }
