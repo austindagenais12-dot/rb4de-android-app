@@ -164,12 +164,18 @@ jobs:
             grep -Eq 'Machine:.*AArch64'
 
       - name: Compile read-only Linux ARM64 glibc game probe
+        timeout-minutes: 8
         shell: bash
         run: |
           set -euo pipefail
           if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gcc-aarch64-linux-gnu
+            # Runner apt mirrors can stall indefinitely; bound each network step
+            # so the workflow fails with a useful error and can be retried.
+            timeout 180s sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=25 \
+              -o Acquire::https::Timeout=25 update -qq
+            timeout 180s sudo DEBIAN_FRONTEND=noninteractive apt-get \
+              -o Acquire::Retries=2 -o Acquire::http::Timeout=25 \
+              -o Acquire::https::Timeout=25 install -y -qq gcc-aarch64-linux-gnu
           fi
           aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -fPIE -pie \
             native/glibc_file_probe.c \
