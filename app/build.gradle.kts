@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.12.11-frame-index-probe"
+        versionCode = 18
+        versionName = "0.12.12-swapchain-correction"
         ndk {
             abiFilters.add("arm64-v8a")
         }
