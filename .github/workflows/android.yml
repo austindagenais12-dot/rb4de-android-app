@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation, feature/v01218-high-signal-logs]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation, feature/v01218-high-signal-logs, feature/v01219-gpu-wait-backoff]
     paths:
       - 'app/**'
       - 'native/vortek/**'
@@ -46,6 +46,9 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
+          elif [[ "$GITHUB_REF_NAME" == "feature/v01219-gpu-wait-backoff" ]]; then
+            # The only native build with the bounded GPU-wait scheduler change.
+            run_id="42209460284"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01214-live-surface-heartbeat" || \
                   "$GITHUB_REF_NAME" == "feature/v01215-controller-input" || \
                   "$GITHUB_REF_NAME" == "feature/v01216-extended-startup" || \
@@ -88,6 +91,16 @@ jobs:
             if [[ "$native_sha" != "18bbb0bc0c914f86816513cf4d10b99178984524" || \
                   "$native_conclusion" != "success" ]]; then
               echo "Refusing altered or unsuccessful v0.12.13 runtime $run_id" >&2
+              exit 1
+            fi
+          fi
+          if [[ "$GITHUB_REF_NAME" == "feature/v01219-gpu-wait-backoff" ]]; then
+            native_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
+            native_conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
+            if [[ "$native_branch" != "feature/v01219-gpu-wait-backoff" || \
+                  "$native_sha" != "7e27c0634c1b0bb0bd42397629bd10d3676adb01" || \
+                  "$native_conclusion" != "success" ]]; then
+              echo "Refusing unverified GPU-wait-backoff runtime $run_id" >&2
               exit 1
             fi
           fi
@@ -328,7 +341,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='24' versionName='0.12.18-high-signal-logs'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='25' versionName='0.12.19-gpu-wait-backoff'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -339,5 +352,5 @@ jobs:
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-high-signal-logs-debug
+          name: rb4dx-gpu-wait-backoff-debug
           path: app/build/outputs/apk/debug/*.apk

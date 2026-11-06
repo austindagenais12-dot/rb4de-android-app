@@ -8,7 +8,7 @@ runtime = (ROOT / ".github/workflows/native-runtime.yml").read_text()
 patch = ROOT / "native/patches/rb4dx-gpu-wait-trace.patch"
 
 assert 'applicationIdSuffix = ".linuxvk.turnip.inputbridge"' in gradle
-assert 'versionName = "0.12.18-high-signal-logs"' in gradle
+assert 'versionName = "0.12.19-gpu-wait-backoff"' in gradle
 assert "feature/v01213-gpu-wait-trace" in android
 assert "feature/v01213-gpu-wait-trace" in runtime
 assert "feature/v01214-live-surface-heartbeat" in android
