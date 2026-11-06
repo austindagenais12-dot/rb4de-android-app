@@ -273,7 +273,7 @@ final class GameBootProbe {
                 logReader = Executors.newSingleThreadExecutor();
                 File destination = capture;
                 logFuture = logReader.submit(() -> ProcessLogDrain.capture(
-                        activeProcess.getInputStream(), destination.toPath()));
+                        activeProcess.getInputStream(), destination.toPath(), stop::isStopped));
             }
             // Use the native emulator's already-implemented controller snapshot
             // reader. A bounded 20 Hz sender lets button holds persist during

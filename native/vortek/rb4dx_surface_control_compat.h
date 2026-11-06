@@ -16,7 +16,8 @@ typedef struct ASurfaceTransaction ASurfaceTransaction;
 
 enum {
     RB4DX_SURFACE_HIDE = 0,
-    RB4DX_SURFACE_SHOW = 1
+    RB4DX_SURFACE_SHOW = 1,
+    RB4DX_SURFACE_OPAQUE = 2
 };
 
 ASurfaceControl* ASurfaceControl_createFromWindow(ANativeWindow* parent, const char* debug_name);
@@ -33,5 +34,7 @@ void ASurfaceTransaction_setScale(ASurfaceTransaction* transaction,
         ASurfaceControl* surface_control, float x_scale, float y_scale);
 void ASurfaceTransaction_setPosition(ASurfaceTransaction* transaction,
         ASurfaceControl* surface_control, int32_t x, int32_t y);
+void ASurfaceTransaction_setBufferTransparency(ASurfaceTransaction* transaction,
+        ASurfaceControl* surface_control, int transparency);
 
 #endif

@@ -83,6 +83,12 @@ cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror \
 echo "PASS: native Bachata audio AF_UNIX socket builds warning-free"
 cc -std=c11 -Wall -Wextra -Werror \
   -I "$project_dir/native/vortek" \
+  "$project_dir/tests/VortekAhbFormatTest.c" \
+  -o "$build_dir/VortekAhbFormatTest"
+"$build_dir/VortekAhbFormatTest"
+echo "PASS: Vortek swapchain format selects matching Android hardware buffer"
+cc -std=c11 -Wall -Wextra -Werror \
+  -I "$project_dir/native/vortek" \
   "$project_dir/tests/VortekFrameRingTest.c" \
   "$project_dir/native/vortek/rb4dx_frame_ring.c" \
   -o "$build_dir/VortekFrameRingTest"

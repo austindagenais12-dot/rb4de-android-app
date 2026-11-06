@@ -47,7 +47,7 @@ jobs:
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" ]]; then
-            # Android-only v0.12.23 changes reuse the exact verified v0.12.22
+            # Android-only v0.12.24 changes reuse the exact verified v0.12.22
             # patched ARM64 runtime. It is NOT an unpinned latest-success run.
             run_id="42241434598"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01219-gpu-wait-backoff" || \
@@ -82,7 +82,7 @@ jobs:
             if [[ "$native_branch" != "feature/v01222-shader-compat" || \
                   "$native_sha" != "c7232ec3548c5a1ce3e1a71f5122f7e5220ba14a" || \
                   "$native_conclusion" != "success" ]]; then
-              echo "v0.12.23 requires the verified v0.12.22 native runtime" >&2
+              echo "v0.12.24 requires the verified v0.12.22 native runtime" >&2
               exit 1
             fi
           fi
@@ -378,7 +378,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='29' versionName='0.12.23-bachata-parity'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='30' versionName='0.12.24-vulkan-frame-correctness'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -389,5 +389,5 @@ jobs:
           sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-bachata-parity-debug
+          name: rb4dx-vulkan-frame-correctness-debug
           path: app/build/outputs/apk/debug/*.apk

@@ -27,6 +27,7 @@
 #include "rb4dx_window_images.h"
 #include "rb4dx_frame_ring.h"
 #include "rb4dx_surface_control_compat.h"
+#include "rb4dx_ahb_format.h"
 #include "vulkan_wrapper.h"
 
 #define TAG "RB4DX.Vortek.Server"
@@ -210,6 +211,10 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_nativePrepareL
     ASurfaceTransaction_setScale(tx, control, (float)target_width / (float)image_width,
             (float)target_height / (float)image_height);
     ASurfaceTransaction_setPosition(tx, control, offset_x, offset_y);
+    // shadPS4 selects VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR. SurfaceFlinger must
+    // not reinterpret uninitialized/irrelevant guest framebuffer alpha as
+    // transparency; otherwise opaque pixels and menu glyphs can disappear.
+    ASurfaceTransaction_setBufferTransparency(tx, control, RB4DX_SURFACE_OPAQUE);
     ASurfaceTransaction_setVisibility(tx, control, RB4DX_SURFACE_SHOW);
     ASurfaceTransaction_apply(tx);
     ASurfaceTransaction_delete(tx);
@@ -674,7 +679,9 @@ JNIEXPORT jlong JNICALL
 Java_com_winlator_xenvironment_components_VortekRendererComponent_acquireNativeBuffer(
         JNIEnv* env, jobject component, jint window_id, jint image_index, jboolean prefer_bgra,
         jint width, jint height) {
-    (void)env; (void)component; (void)prefer_bgra;
+    (void)env; (void)component;
+    _Static_assert(AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM == RB4DX_AHB_FORMAT_RGBA_8888,
+            "Android RGBA hardware buffer constant unexpectedly changed");
     if (width < 1 || height < 1 || width > 8192 || height > 8192 ||
         image_index < 0 || image_index > 2) return 0;
     pthread_mutex_lock(&buffer_mutex);
@@ -684,18 +691,28 @@ Java_com_winlator_xenvironment_components_VortekRendererComponent_acquireNativeB
     if (!existing && window_images.count < RB4DX_MAX_WINDOW_IMAGES) {
         AHardwareBuffer_Desc desc = {
             .width = (uint32_t)width, .height = (uint32_t)height, .layers = 1,
-            .format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
+            .format = rb4dx_ahb_format_for_swapchain(prefer_bgra == JNI_TRUE),
             .usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
-                     AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT
+                     AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+                     AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY
         };
         AHardwareBuffer* buffer = NULL;
-        if (AHardwareBuffer_allocate(&desc, &buffer) == 0 && buffer) {
+        int allocation_error = AHardwareBuffer_allocate(&desc, &buffer);
+        if (allocation_error == 0 && buffer) {
             if (rb4dx_window_images_record(&window_images, window_id,
                     (uint8_t)image_index, width, height, (uintptr_t)buffer)) {
                 result = (jlong)(uintptr_t)buffer;
+                LOG("swapchain_ahb_allocated window=%d image=%d size=%dx%d format=%s(%u)",
+                        window_id, image_index, width, height,
+                        prefer_bgra ? "BGRA" : "RGBA", desc.format);
             } else {
                 AHardwareBuffer_release(buffer);
             }
+        } else {
+            // Never silently substitute RGBA for requested BGRA: doing so
+            // would bind an incompatible VkImage to external memory.
+            LOG("swapchain_ahb_allocate_failed window=%d image=%d format=%u error=%d",
+                    window_id, image_index, desc.format, allocation_error);
         }
     }
     pthread_mutex_unlock(&buffer_mutex);

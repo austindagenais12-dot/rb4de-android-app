@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.charset.StandardCharsets;
+import java.util.function.BooleanSupplier;
 
 /** Drains high-volume native logs without growing storage through long Play sessions. */
 final class ProcessLogDrain {
@@ -17,14 +18,29 @@ final class ProcessLogDrain {
     private ProcessLogDrain() {}
 
     static long capture(InputStream input, Path destination) throws IOException {
+        return capture(input, destination, () -> false);
+    }
+
+    /** Only a user-requested Stop makes a closed process pipe an expected EOF. */
+    static long capture(InputStream input, Path destination,
+            BooleanSupplier stoppedByUser) throws IOException {
         byte[] io = new byte[65536];
         byte[] tail = new byte[TAIL_BYTES];
         long total = 0;
         int position = 0, stored = 0;
         try (OutputStream output = Files.newOutputStream(destination,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-            int count;
-            while ((count = input.read(io)) >= 0) {
+            while (true) {
+                int count;
+                try {
+                    count = input.read(io);
+                } catch (IOException readFailure) {
+                    // Destroying an Android Process closes its Java pipe. Still
+                    // write the accumulated ring tail before returning the log.
+                    if (!stoppedByUser.getAsBoolean()) throw readFailure;
+                    break;
+                }
+                if (count < 0) break;
                 if (count == 0) continue;
                 int head = (int)Math.min(count, Math.max(0L, HEAD_BYTES - total));
                 if (head > 0) output.write(io, 0, head);
