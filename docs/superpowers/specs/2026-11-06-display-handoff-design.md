@@ -27,4 +27,3 @@ Implement explicit Vulkan FOREIGN queue ownership release/acquire around the exi
 
 ## Boundaries
 Do not modify user game files or saves, enable Deluxe, roll back audio/input/fullscreen, switch driver by default, or claim playability from a frame count. Format-changing swapchain cache and shader parity gaps are recorded research findings, not speculative fixes bundled into this build.
-

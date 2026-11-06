@@ -36,7 +36,7 @@ Files: .github/workflows/android.yml, app/build.gradle.kts, app/src/main/java/de
 - [x] Set the successor version metadata and update package expectations.
 - [x] Run tests/run.sh, git diff --check, Android CI compile/package checks.
 - [x] Verify produced APK version/package, signing certificate vs .24, and embedded runtime hashes.
-- [ ] Save final reviewed APK and engineering findings; report exact tested scope and hardware limitation.
+- [x] Save final reviewed APK and engineering findings; report exact tested scope and hardware limitation.
 
 
 ## Recovered execution and review
@@ -46,3 +46,9 @@ Files: .github/workflows/android.yml, app/build.gradle.kts, app/src/main/java/de
 - Initial CI run 42293682234 succeeded and .24 signing/runtime identity matched. Final build must include the review fixes; do not distribute the initial artifact.
 - Deferred minor review findings: test output says “preserve contents” while verifying barrier/layout metadata, not pixels; event-based layout adapters are not exercised by the new host harness. Main legacy/synchronization2 barriers are exercised.
 - Explicit verification boundary: no phone visual test, compositor load test, or playability claim. General render-pass PRESENT translation is outside the pinned emulator's barrier/dynamic-rendering path and this change.
+
+## Final result
+- Final build: https://github.com/austindagenais12-dot/rb4de-android-app/actions/runs/42294729432 — success, APK source commit 1e1851de914810ef5abc5d5f067cda9e8a597d54.
+- APK SHA256: 952672bbe4a19b2ec396f994a34ec333bc276340c001627765c7d75f9d6bb9e7.
+- APK v2 signature verified; same signing certificate as .24. Eleven native libraries, both included Turnip drivers, runtime ZIP and manifest byte-identical; only libvortekrenderer.so changed among native libraries.
+- APK and continuation handoff saved successfully. Phone graphics and performance remain unverified.

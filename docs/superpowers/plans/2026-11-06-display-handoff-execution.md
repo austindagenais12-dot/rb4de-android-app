@@ -1,0 +1,20 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-11-06-display-handoff.md
+Recovered 2026-11-06: exact .24 HEAD 7f1b7f037e50fea6d1af200a71543bf09bb70d76, branch fix/v01225-rendering-contract. Previous session saved plan/spec only; no implementation or tests yet.
+Baseline: bash tests/run.sh PASS (log /workspace/scratch/dbec2e96b2a7/baseline-tests.log).
+Pre-flight: Task 1 produces a patch applied after frame-index patch; Task 2 must pin same server and runtime, enable branch build and run host tests against patched server.
+Ruling: resume the dedicated recovered fix branch in place — no other edits present; avoid abandoning recovered checkout.
+Ruling: use checked-in ledger directly because cloud skill script isn't an executable local resource; keep exact task boundaries and observed test evidence here.
+Task 1 in progress: test actual swapchain acquire/present callbacks with fake Vulkan driver, using real Vulkan structs and production C sources. Missing ownership barrier must cause baseline assertion failure. Pinned emulator uses legacy pipeline barriers for present, dynamic rendering for its overlay; normalize both barrier API generations.
+Task 1 evidence: foreign-red.log failed on actual .24 empty acquire submission; layout-red.log failed on actual .24 PRESENT layout reaching driver; lifetime-red.log caught premature destruction after release-submit failure. All three pass with foreign-sync patch. Tests execute production C and request handlers with real Vulkan headers; fake only external driver/JNI boundaries.
+Task 1: implementation complete; independent whole-branch review pending. Verified three-image repeated cycles, initial/reuse layouts, submit failure, pending release timeout, delayed safe cleanup, legacy + synchronization2 layout conversion, clean patch application.
+Ruling: quarantine resources when guest rendering is unproven, even if acquisition fence completed — its completion does not cover later guest rendering; release failure stops context, resources remain until device/process teardown. Cost: bounded session-error resource retention instead of unsafe destruction.
+Task 2: versionCode31/display-sync workflow integration complete; runtime pinned to 42241434598 for new branch, foreign patch applied before native compile; normal Play removes register-dump opt-in, diagnostic modes retain it. Full tests rerun after artifact-name expectation updated. Android CI and APK verification pending.
+Final: fixed open IPC rings — VortekErrorShutdownTest RED→GREEN using production request thread and guest vt_recv; both rings marked EXIT before detach.
+Final: fixed retryable partial acquire — nth-submit fault and fence-only/combined acquire RED→GREEN; partial submission returns terminal DEVICE_LOST and does not cancel/recycle.
+Final review: independent reviewer found two Important issues, both fixed; focused and full suite passed with one local AF_UNIX sandbox skip, CI rerun pending.
+Final: minor (deferred): test wording for contents overstates actual barrier/layout evidence; report explicitly limits it to command capture.
+Final: minor (deferred): event-based adapters not covered by host harness; pinned emulator present path uses tested legacy barriers.
+Final: Ruling: hardware rendering and general-purpose render-pass translation remain unverified/out of scope — this is a pinned-emulator display contract fix, not proof of pixel correctness — cost if wrong: remaining corruption needs additional evidenced engine/driver investigation.
+Initial artifact verification: build42293682234 PASS; signer397b37436c4f583a41badf961c9ed9eaf2d62f455e1abe8c22d418212eeb545d matches .24; runtime, driver, bridge, X11 byte-identical except libvortekrenderer.so. Final artifact awaits review-fix rebuild.
+Task 2: complete — reviewed source build42294729432 PASS; signer/runtime verification PASS; APK and handoff saved with IDs libfile_1175318fa2f08191bcce841ef2f4608c and libfile_430e200f7d708191bbcf4addc197e1d9. Local metadata persisted.
+Final branch disposition: keep dedicated fix branch and checkout for continuation; no merge required to deliver APK.
