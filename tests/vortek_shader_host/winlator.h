@@ -1,0 +1,1 @@
+/* Android utility types are replaced at the host boundary. */

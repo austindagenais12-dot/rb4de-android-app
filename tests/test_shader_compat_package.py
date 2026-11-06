@@ -8,8 +8,8 @@ GRADLE = (ROOT / "app/build.gradle.kts").read_text()
 SHADER = (ROOT / "native/patches/rb4dx-shader-divergence.patch").read_text()
 COMPUTE = (ROOT / "native/patches/rb4dx-compute-wait-resolution.patch").read_text()
 
-assert 'versionCode = 31' in GRADLE
-assert 'versionName = "0.12.25-display-sync"' in GRADLE
+assert 'versionCode = 32' in GRADLE
+assert 'versionName = "0.12.26-native-shaders"' in GRADLE
 assert 'feature/v01222-shader-compat' in NATIVE
 assert 'feature/v01222-shader-compat' in ANDROID
 assert 'rb4dx-shader-divergence.patch' in NATIVE
@@ -18,7 +18,7 @@ assert 'v7-rb4dx-shader-compat' in NATIVE, "new compiler requires a fresh ARM64 
 assert 'run_id="42241434598"' in ANDROID
 assert '"c7232ec3548c5a1ce3e1a71f5122f7e5220ba14a"' in ANDROID
 assert '"$native_branch" != "feature/v01222-shader-compat"' in ANDROID
-assert 'v0.12.25 requires the verified v0.12.22 native runtime' in ANDROID
+assert 'v0.12.26 requires the verified v0.12.22 native runtime' in ANDROID
 
 assert 'IR::Opcode::LaneId' in SHADER
 assert 'IR::Attribute::LocalInvocationIndex' in SHADER

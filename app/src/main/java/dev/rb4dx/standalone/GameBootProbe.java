@@ -354,7 +354,7 @@ final class GameBootProbe {
                     .append(inputPump.report())
                     .append("android_final_frame_preview_posted=").append(finalFramePosted).append('\n')
                     .append(vortek.previewDiagnosticReport())
-                    .append("crash_register_capture_enabled=true\n")
+                    .append("crash_register_capture_enabled=").append(!play).append('\n')
                     .append("checkpoint=").append(checkpoint).append('\n')
                     .append(NativeCrashSummary.fromText(crashDiagnostics))
                     .append(gpuWaitDiagnostics)

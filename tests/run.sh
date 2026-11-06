@@ -145,6 +145,7 @@ if [[ -n "${VORTEK_SERVER_SOURCE:-}" ]]; then
   vortek_args=(--source "$VORTEK_SERVER_SOURCE")
   if [[ "${VORTEK_SOURCE_PATCHED:-0}" == 1 ]]; then vortek_args+=(--patched); fi
   python3 "$project_dir/tests/test_vortek_foreign_sync.py" "${vortek_args[@]}"
+  python3 "$project_dir/tests/test_vortek_native_shaders.py" "${vortek_args[@]}"
 else
   echo 'SKIP: Vortek driver-boundary tests require VORTEK_SERVER_SOURCE (mandatory in Android CI)'
 fi

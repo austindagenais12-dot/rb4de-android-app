@@ -1,0 +1,77 @@
+diff --git a/include/shader_inspector.h b/include/shader_inspector.h
+index 3da9e80..aef6d7f 100644
+--- a/include/shader_inspector.h
++++ b/include/shader_inspector.h
+@@ -11,4 +11,5 @@ typedef struct ShaderModule {
+
+ typedef struct ShaderInspector {
++    bool preserveNativeShaders;  /* native Vulkan engine and supported vertex formats */
+     bool checkClipDistance;       /* workaround for vertex explosion on Mali devices */
+     bool convertFormatScaled;     /* workaround for t-pose issue on D3D9 games */
+@@ -23,3 +24,3 @@ extern VkResult ShaderInspector_createModule(ShaderInspector* shaderInspector, V
+ extern bool isFormatScaled(VkFormat format);
+
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/src/shader_inspector.c b/src/shader_inspector.c
+index 947ae34..511d317 100644
+--- a/src/shader_inspector.c
++++ b/src/shader_inspector.c
+@@ -608,10 +608,42 @@ ShaderInspector* ShaderInspector_create(VkContext* context, VkPhysicalDevice phy
+     }
+
++    // shadPS4 already emits native SPIR-V and chooses its own vertex formats.
++    // The compatibility rewriter specializes a shared ShaderModule for the
++    // first pipeline, then skips the format conversion on later pipelines.
++    // Avoid that mutable, D3D-oriented path when the native driver can consume
++    // every format the rewriter would otherwise substitute.
++    bool nativeFormats = context->engineName &&
++            strcmp(context->engineName, "shadPS4 Vulkan") == 0 &&
++            supportedFeatures->shaderClipDistance;
++    for (VkFormat format = VK_FORMAT_R8_USCALED;
++            nativeFormats && format <= VK_FORMAT_R16G16B16A16_SSCALED; format++) {
++        if (!isFormatScaled(format)) continue;
++        VkFormatProperties props = {0};
++        vulkanWrapper.vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
++        if (!(props.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT)) nativeFormats = false;
++    }
++    shaderInspector->preserveNativeShaders = nativeFormats;
++
+     return shaderInspector;
+ }
+
+ VkResult ShaderInspector_createModule(ShaderInspector* shaderInspector, VkDevice device, const uint32_t* code, size_t codeSize, ShaderModule** ppModule) {
++    *ppModule = NULL;
+     ShaderModule* shaderModule = calloc(1, sizeof(ShaderModule));
++    if (!shaderModule) return VK_ERROR_OUT_OF_HOST_MEMORY;
+     shaderModule->module = VK_NULL_HANDLE;
++    if (shaderInspector->preserveNativeShaders) {
++        VkShaderModuleCreateInfo createInfo = {0};
++        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
++        createInfo.pCode = code;
++        createInfo.codeSize = codeSize;
++        VkResult result = vulkanWrapper.vkCreateShaderModule(device, &createInfo, NULL, &shaderModule->module);
++        if (result != VK_SUCCESS) {
++            free(shaderModule);
++            return result;
++        }
++        *ppModule = shaderModule;
++        return VK_SUCCESS;
++    }
+     SpvExecutionModel executionModel = getSpvExecutionModel(code, codeSize);
+
+@@ -638,4 +670,13 @@ VkResult ShaderInspector_createModule(ShaderInspector* shaderInspector, VkDevice
+
+ VkResult ShaderInspector_inspectShaderStages(ShaderInspector* shaderInspector, VkDevice device, VkPipelineShaderStageCreateInfo* stageInfos, uint32_t stageCount, const VkPipelineVertexInputStateCreateInfo* vertexInputState) {
++    if (shaderInspector->preserveNativeShaders) {
++        // Pipeline request storage is private to the worker. Shared modules
++        // are immutable, so parallel pipeline creation requires no rewriting.
++        for (uint32_t i = 0; i < stageCount; i++) {
++            ShaderModule* module = (ShaderModule*)stageInfos[i].module;
++            if (module) stageInfos[i].module = module->module;
++        }
++        return VK_SUCCESS;
++    }
+     VkResult result = VK_SUCCESS;
+     ShaderModule* vertexShaderModule = NULL;
