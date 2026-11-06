@@ -1,0 +1,66 @@
+--- a/src/xwindow_swapchain.c
++++ b/src/xwindow_swapchain.c
+@@ -96,7 +96,9 @@
+ }
+ 
+ VkSurfaceFormatKHR* getSurfaceFormats(uint32_t* formatCount) {
+-    static const VkFormat supportedFormats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB};
++    /* Android currently imports RGBA8 AHardwareBuffers in this bridge. Do not
++     * advertise BGRA/sRGB swapchain images that are backed by RGBA8 UNORM. */
++    static const VkFormat supportedFormats[] = {VK_FORMAT_R8G8B8A8_UNORM};
+     int supportedFormatCount = ARRAY_SIZE(supportedFormats);
+     VkSurfaceFormatKHR* surfaceFormats = calloc(supportedFormatCount, sizeof(VkSurfaceFormatKHR));
+ 
+@@ -110,8 +112,10 @@
+     return surfaceFormats;
+ }
+ 
+-XWindowSwapchain* XWindowSwapchain_create(VkDevice device, uint32_t graphicsQueueIndex, VkSwapchainCreateInfoKHR* swapchainInfo, JMethods* jmethods, int windowId) {
+-    XWindowSwapchain* swapchain = calloc(1, sizeof(XWindowSwapchain));
++XWindowSwapchain* XWindowSwapchain_create(VkDevice device, uint32_t graphicsQueueIndex, VkSwapchainCreateInfoKHR* swapchainInfo, JMethods* jmethods, int windowId) {
++    /* The Android image table owns slots 0..2; reject unsupported counts. */
++    if (!swapchainInfo || swapchainInfo->minImageCount == 0 || swapchainInfo->minImageCount > 3) return NULL;
++    XWindowSwapchain* swapchain = calloc(1, sizeof(XWindowSwapchain));
+     swapchain->windowId = windowId;
+     swapchain->imageCount = swapchainInfo->minImageCount;
+     swapchain->images = calloc(swapchain->imageCount, sizeof(XWindowSwapchain_Image));
+@@ -146,8 +150,9 @@
+     MEMFREE(swapchain);
+ }
+ 
+-VkResult XWindowSwapchain_acquireNextImage(XWindowSwapchain* swapchain, uint64_t timeout, VkSemaphore signalSemaphore, VkFence fence, uint32_t* imageIndex) {
+-    if (signalSemaphore || fence) {
++VkResult XWindowSwapchain_acquireNextImage(XWindowSwapchain* swapchain, uint64_t timeout, VkSemaphore signalSemaphore, VkFence fence, uint32_t* imageIndex) {
++    if (!swapchain || !imageIndex || swapchain->imageCount <= 0) return VK_ERROR_OUT_OF_DATE_KHR;
++    if (signalSemaphore || fence) {
+         VkSubmitInfo submitInfo = {0};
+         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+         if (signalSemaphore) {
+@@ -167,6 +172,11 @@
+         result = VK_ERROR_SURFACE_LOST_KHR;
+     }
+ 
+-    *imageIndex = 0;
+-    return result;
++    /* Present the same swapchain image that the guest acquired. Returning 0
++     * unconditionally aliases all frames to image 0 and leaves stale images. */
++    if (result == VK_SUCCESS) {
++        *imageIndex = swapchain->nextImageIndex;
++        swapchain->nextImageIndex = (swapchain->nextImageIndex + 1u) % (uint32_t)swapchain->imageCount;
++    }
++    return result;
+ }
+--- a/include/xwindow_swapchain.h
++++ b/include/xwindow_swapchain.h
+@@ -13,8 +13,9 @@
+ typedef struct XWindowSwapchain {
+     int windowId;
+     XWindowSwapchain_Image* images;
+-    int imageCount;
+-    VkFormat imageFormat;
++    int imageCount;
++    uint32_t nextImageIndex;
++    VkFormat imageFormat;
+     VkExtent2D imageExtent;
+     VkImageUsageFlags imageUsage;
+     VkQueue queue;
