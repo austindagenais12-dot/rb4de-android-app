@@ -200,6 +200,10 @@ jobs:
           # callbacks. Fail loudly if upstream source changes under the pin.
           git -C "$server_src" apply --check "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
           git -C "$server_src" apply "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
+          # Keep the guest-acquired image index in sync with the actual Android
+          # hardware buffer, and only advertise the RGBA8 format we allocate.
+          git -C "$server_src" apply --check "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-swapchain-correction.patch"
+          git -C "$server_src" apply "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-swapchain-correction.patch"
           cmake -S native/vortek -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DWINLATOR_SOURCE="$winlator_src" -DVORTEK_SERVER_SOURCE="$server_src"
           cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge hook_impl main_hook --parallel 4
           install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libwinlator.so
