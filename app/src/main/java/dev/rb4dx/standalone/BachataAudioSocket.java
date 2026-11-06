@@ -11,6 +11,9 @@ import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** App-private AF_UNIX to Android AudioTrack bridge used by the Bachata shadPS4 core. */
 final class BachataAudioSocket implements AutoCloseable {
@@ -23,10 +26,15 @@ final class BachataAudioSocket implements AutoCloseable {
 
     private final Path socketPath;
     private final ExecutorService reader = Executors.newSingleThreadExecutor();
+    private final ExecutorService clients = Executors.newCachedThreadPool();
+    private final AtomicInteger activeClients = new AtomicInteger();
     private volatile boolean running;
     private volatile int serverFd = -1;
-    private volatile int sessions, prepareCount, pcmPackets;
-    private volatile long pcmBytes;
+    private final AtomicInteger sessions = new AtomicInteger();
+    private final AtomicInteger prepareCount = new AtomicInteger();
+    private final AtomicInteger pcmPackets = new AtomicInteger();
+    private static final int MAX_AUDIO_PORTS = 8;
+    private final AtomicLong pcmBytes = new AtomicLong();
     private volatile String lastError = "NONE";
 
     BachataAudioSocket(Path socketPath) { this.socketPath = socketPath; }
@@ -45,10 +53,11 @@ final class BachataAudioSocket implements AutoCloseable {
 
     String report() {
         return "android_audio_socket_ready=" + (serverFd >= 0) + '\n'
-                + "android_audio_sessions=" + sessions + '\n'
-                + "android_audio_prepare_requests=" + prepareCount + '\n'
-                + "android_audio_pcm_packets=" + pcmPackets + '\n'
-                + "android_audio_pcm_bytes=" + pcmBytes + '\n'
+                + "android_audio_sessions=" + sessions.get() + '\n'
+                + "android_audio_active_ports=" + activeClients.get() + '\n'
+                + "android_audio_prepare_requests=" + prepareCount.get() + '\n'
+                + "android_audio_pcm_packets=" + pcmPackets.get() + '\n'
+                + "android_audio_pcm_bytes=" + pcmBytes.get() + '\n'
                 + "android_audio_last_error=" + lastError + '\n';
     }
 
@@ -60,11 +69,28 @@ final class BachataAudioSocket implements AutoCloseable {
                 if (running) lastError = "ACCEPT_ERRNO_" + (-client);
                 break;
             }
-            sessions++;
-            try { serve(client); }
-            catch (IOException | RuntimeException error) {
-                lastError = error.getClass().getSimpleName() + "_" + error.getMessage();
-            } finally { nativeClose(client); }
+            sessions.incrementAndGet();
+            if (activeClients.incrementAndGet() > MAX_AUDIO_PORTS) {
+                activeClients.decrementAndGet();
+                nativeClose(client);
+                lastError = "TOO_MANY_AUDIO_PORTS";
+                continue;
+            }
+            try {
+                clients.submit(() -> {
+                    try { serve(client); }
+                    catch (IOException | RuntimeException error) {
+                        lastError = error.getClass().getSimpleName() + "_" + error.getMessage();
+                    } finally {
+                        nativeClose(client);
+                        activeClients.decrementAndGet();
+                    }
+                });
+            } catch (RejectedExecutionException closed) {
+                    nativeClose(client);
+                    activeClients.decrementAndGet();
+                return;
+            }
         }
     }
 
@@ -83,11 +109,11 @@ final class BachataAudioSocket implements AutoCloseable {
                     BachataAudioProtocol.Format format = BachataAudioProtocol.parsePrepare(data);
                     if (track != null) { track.stop(); track.release(); }
                     track = makeTrack(format);
-                    prepareCount++;
+                    prepareCount.incrementAndGet();
                     track.play();
                 } else if (opcode == 5) {
-                    pcmPackets++;
-                    pcmBytes += len;
+                    pcmPackets.incrementAndGet();
+                    pcmBytes.addAndGet(len);
                     if (track != null) {
                         int pos = 0;
                         while (pos < data.length && running) {
@@ -129,6 +155,7 @@ final class BachataAudioSocket implements AutoCloseable {
                 .setAudioFormat(new AudioFormat.Builder()
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                         .setChannelMask(channels).setSampleRate(format.sampleRate).build())
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setBufferSizeInBytes(buffer).build();
         if (result.getState() != AudioTrack.STATE_INITIALIZED) {
@@ -154,7 +181,10 @@ final class BachataAudioSocket implements AutoCloseable {
     @Override public void close() {
         running = false;
         reader.shutdownNow();
+        clients.shutdownNow();
         try { reader.awaitTermination(1300, TimeUnit.MILLISECONDS); }
+        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        try { clients.awaitTermination(1500, TimeUnit.MILLISECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
         if (serverFd >= 0) { nativeClose(serverFd); serverFd = -1; }
         try { Files.deleteIfExists(socketPath); }

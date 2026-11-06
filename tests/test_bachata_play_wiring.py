@@ -15,6 +15,8 @@ native = (root / "app/src/main/cpp/native_runtime_socket.c").read_text()
 assert '"MESA_SHADER_CACHE_DIR"' in probe and "Os.setenv" in probe
 assert '"BACHATA_ALSA_SOCKET"' in probe and "audio.start();" in probe
 assert "BachataAudioSocket" in audio and "AudioTrack" in audio
+assert "MAX_AUDIO_PORTS = 8" in audio and "clients.submit(" in audio
+assert "PERFORMANCE_MODE_LOW_LATENCY" in audio
 assert "native_audio_socket.c" in cmake
 assert '"gpu_driver_choice"' in main and '"bachata_compat"' in (java / "GpuDriverChoice.java").read_text()
 assert "FramePixelStats.classify" in pixels
