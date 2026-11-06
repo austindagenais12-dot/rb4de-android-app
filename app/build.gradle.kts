@@ -10,8 +10,8 @@ android {
         applicationId = "dev.rb4dx.standalone"
         minSdk = 31
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.12.24-vulkan-frame-correctness"
+        versionCode = 31
+        versionName = "0.12.25-display-sync"
         ndk {
             abiFilters.add("arm64-v8a")
         }

@@ -249,7 +249,13 @@ final class GameBootProbe {
             // The pinned ARM64 emulator already contains an async-signal-safe
             // crash reporter. Capture PC/LR, register state and module maps
             // if the GPU communication thread jumps through a null pointer.
-            builder.environment().put("BACHATA_CRASH_REGISTERS", "1");
+            if (play) {
+                // Handled guest faults can emit thousands of register lines;
+                // retain ordinary stderr/exit reporting during normal Play.
+                builder.environment().remove("BACHATA_CRASH_REGISTERS");
+            } else {
+                builder.environment().put("BACHATA_CRASH_REGISTERS", "1");
+            }
             // The Debian libX11/libxcb client uses /tmp/.X11-unix/Xn, whereas
             // the embedded Android server must bind inside its private TMPDIR.
             // Translate only this session's display socket at connect(2).

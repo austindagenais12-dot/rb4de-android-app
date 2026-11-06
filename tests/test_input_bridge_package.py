@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parent.parent
 gradle = (ROOT / "app/build.gradle.kts").read_text()
 workflow = (ROOT / ".github/workflows/android.yml").read_text()
 
-assert 'versionName = "0.12.24-vulkan-frame-correctness"' in gradle, "controller app version must advance"
+assert 'versionName = "0.12.25-display-sync"' in gradle, "controller app version must advance"
 assert 'applicationIdSuffix = ".linuxvk.turnip.inputbridge"' in gradle, "preserve prior app data in separate package"
 assert 'feature/v01215-controller-input' in workflow, "CI must trigger new input branch"
 assert '42119601182' in workflow, "pin previously verified guest runtime"

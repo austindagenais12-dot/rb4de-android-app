@@ -8,7 +8,7 @@ on:
       - 'Build independent Android X11 engine'
     types: [completed]
   push:
-    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation, feature/v01218-high-signal-logs, feature/v01219-gpu-wait-backoff, feature/v01220-live-surface-transport, feature/v01222-shader-compat]
+    branches: [main, fix/v0129-gpu-diagnostics, fix/v0130-feedback-loop-dispatch, feature/v0131-live-frame-queue, feature/v01212-preview-failure-diagnostics, feature/v01213-gpu-wait-trace, feature/v01214-live-surface-heartbeat, feature/v01215-controller-input, feature/v01216-extended-startup, feature/v01217-evidence-preservation, feature/v01218-high-signal-logs, feature/v01219-gpu-wait-backoff, feature/v01220-live-surface-transport, feature/v01222-shader-compat, fix/v01225-rendering-contract]
     paths:
       - 'app/**'
       - 'native/vortek/**'
@@ -46,8 +46,8 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_run" && \
                 "${{ github.event.workflow_run.name }}" == "Build ARM64 emulator runtime (experimental)" ]]; then
             run_id="${{ github.event.workflow_run.id }}"
-          elif [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" ]]; then
-            # Android-only v0.12.24 changes reuse the exact verified v0.12.22
+          elif [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" || "$GITHUB_REF_NAME" == "fix/v01225-rendering-contract" ]]; then
+            # Android-only v0.12.25 changes reuse the exact verified v0.12.22
             # patched ARM64 runtime. It is NOT an unpinned latest-success run.
             run_id="42241434598"
           elif [[ "$GITHUB_REF_NAME" == "feature/v01219-gpu-wait-backoff" || \
@@ -76,13 +76,13 @@ jobs:
             exit 1
           fi
           native_branch="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_branch')"
-          if [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" ]]; then
+          if [[ "$GITHUB_REF_NAME" == "feature/v01222-shader-compat" || "$GITHUB_REF_NAME" == "fix/v01225-rendering-contract" ]]; then
             native_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_sha')"
             native_conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion')"
             if [[ "$native_branch" != "feature/v01222-shader-compat" || \
                   "$native_sha" != "c7232ec3548c5a1ce3e1a71f5122f7e5220ba14a" || \
                   "$native_conclusion" != "success" ]]; then
-              echo "v0.12.24 requires the verified v0.12.22 native runtime" >&2
+              echo "v0.12.25 requires the verified v0.12.22 native runtime" >&2
               exit 1
             fi
           fi
@@ -281,6 +281,9 @@ jobs:
           # callbacks. Fail loudly if upstream source changes under the pin.
           git -C "$server_src" apply --check "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
           git -C "$server_src" apply "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-frame-index.patch"
+          git -C "$server_src" apply --check "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-foreign-sync.patch"
+          git -C "$server_src" apply "$GITHUB_WORKSPACE/native/patches/rb4dx-vortek-foreign-sync.patch"
+          python3 tests/test_vortek_foreign_sync.py --source "$server_src" --patched
           cmake -S native/vortek -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DWINLATOR_SOURCE="$winlator_src" -DVORTEK_SERVER_SOURCE="$server_src"
           cmake --build "$build_dir" --target winlator vortekrenderer rb4dx_vortek_bridge hook_impl main_hook --parallel 4
           install -m 0755 "$(find "$build_dir" -name libwinlator.so -print -quit)" app/src/main/jniLibs/arm64-v8a/libwinlator.so
@@ -367,7 +370,7 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - name: Run JVM and runtime-verifier regression tests
-        run: bash tests/run.sh
+        run: VORTEK_SERVER_SOURCE="$RUNNER_TEMP/rb4dx-vortek-server" VORTEK_SOURCE_PATCHED=1 bash tests/run.sh
       - run: gradle :app:assembleDebug --no-daemon
       - name: Verify native startup and Vulkan libraries are packaged
         shell: bash
@@ -378,7 +381,7 @@ jobs:
           unzip -t "$apk" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
-            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='30' versionName='0.12.24-vulkan-frame-correctness'"
+            grep -F "package: name='dev.rb4dx.standalone.linuxvk.turnip.inputbridge' versionCode='31' versionName='0.12.25-display-sync'"
           unzip -Z -1 "$apk" | grep -Fx 'assets/runtime/runtime.zip'
           for name in librb4dx_host_loader.so librb4dx_x11_server.so \
               librb4dx_x11_redirect.so libwinlator.so libvortekrenderer.so \
@@ -386,8 +389,12 @@ jobs:
               libhook_impl.so libmain_hook.so; do
             unzip -Z -1 "$apk" | grep -Fx "lib/arm64-v8a/$name"
           done
-          sha256sum "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" > app/build/outputs/apk/debug/verification.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" >> app/build/outputs/apk/debug/verification.txt
+          sha256sum "$apk" >> app/build/outputs/apk/debug/verification.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: rb4dx-vulkan-frame-correctness-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: rb4dx-display-sync-debug
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/verification.txt
