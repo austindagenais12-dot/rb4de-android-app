@@ -517,6 +517,16 @@ public final class MainActivity extends Activity {
         super.onResume();
         refreshNativeAccessStatus();
         refreshTurnipStatus();
+        if (preferences == null || gameBootStatus == null) return;
+        String playReport = preferences.getString("last_play_report", null);
+        if (playReport != null && !playReport.equals(lastGameBootReport)) {
+            lastGameBootReport = playReport;
+            lastGameBootFullLog = getFilesDir().toPath().resolve("diagnostics/rb4dx-last-startup.log");
+            gameBootStatus.setText("Last full-screen Play session:\n"
+                    + playReport.substring(0, Math.min(1900, playReport.length())));
+            copyGameBootButton.setEnabled(true);
+            exportGameBootLogButton.setEnabled(Files.isRegularFile(lastGameBootFullLog));
+        }
     }
 
     @Override
@@ -724,20 +734,6 @@ public final class MainActivity extends Activity {
         launch.putExtra(GamePlayerActivity.EXTRA_RUNTIME,
                 preparedRuntimeDirectory.toString());
         startActivity(launch);
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        if (preferences == null || gameBootStatus == null) return;
-        String playReport = preferences.getString("last_play_report", null);
-        if (playReport != null && !playReport.equals(lastGameBootReport)) {
-            lastGameBootReport = playReport;
-            lastGameBootFullLog = getFilesDir().toPath().resolve("diagnostics/rb4dx-last-startup.log");
-            gameBootStatus.setText("Last full-screen Play session:\n"
-                    + playReport.substring(0, Math.min(1900, playReport.length())));
-            copyGameBootButton.setEnabled(true);
-            exportGameBootLogButton.setEnabled(Files.isRegularFile(lastGameBootFullLog));
-        }
     }
 
     @Override

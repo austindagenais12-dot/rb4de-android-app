@@ -23,6 +23,7 @@ assert "static Result play(" in probe and "process.waitFor();" in probe
 assert "ProcessLogDrain.capture" in probe and "readSession(listeningFd, play ? 0 : timeoutMs)" in probe
 assert "timeout_ms == 0 ? INT64_MAX" in native
 assert "launchPlayer()" in main and "GamePlayerActivity.class" in main
+assert main.count("void onResume()") == 1, "Play report must use existing lifecycle hook"
 assert "GameBootProbe.play(" in play and "stop.requestStop();" in play
 assert 'android:name=".GamePlayerActivity"' in manifest
 print("PASS: Bachata audio, driver A/B, pixel stats, bounded Play log and landscape lifecycle wired")
